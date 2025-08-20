@@ -21,7 +21,7 @@ function injectBlueskyOption() {
     }
   }, true);
 
-  // Set up observer to watch for dropdown menus
+  // Set up observer to watch for dropdown menus and compose areas
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.type === 'childList') {
@@ -32,8 +32,17 @@ function injectBlueskyOption() {
             // Also check children
             const dropdowns = node.querySelectorAll('[role="menu"]');
             dropdowns.forEach(dropdown => processDropdownMenu(dropdown));
+            
+            // Check for compose tweet areas
+            processComposeTweetAreas(node);
           }
         });
+        
+        // Also check for compose tweet areas in existing DOM
+        processComposeTweetAreas(document);
+        
+        // Re-check existing processed areas in case they changed from regular to reply
+        recheckProcessedAreas();
       }
     });
   });
@@ -42,6 +51,9 @@ function injectBlueskyOption() {
     childList: true,
     subtree: true,
   });
+  
+  // Initial processing
+  processComposeTweetAreas(document);
 }
 
 function processDropdownMenu(menuElement) {
@@ -118,6 +130,370 @@ function createBlueskyMenuItem(referenceMenuItem) {
   });
 
   return option;
+}
+
+function processComposeTweetAreas(container) {
+  // Find compose tweet areas that haven't been processed
+  const composeAreas = container.querySelectorAll('[data-testid="toolBar"]:not(.bluesky-dual-processed)');
+  
+  console.log('Found', composeAreas.length, 'unprocessed compose areas');
+  
+  composeAreas.forEach(toolbar => {
+    // Check if this is actually a compose toolbar (has a Post button)
+    const postButton = toolbar.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]');
+    if (postButton) {
+      console.log('Found post button with text:', postButton.textContent);
+      
+      // Check if this is a reply
+      const isReply = isReplyCompose(toolbar);
+      console.log('Is reply?', isReply);
+      
+      if (isReply) {
+        console.log('Skipping dual post button for reply compose');
+        toolbar.classList.add('bluesky-dual-processed');
+        // Remove existing button if it exists
+        const existingButton = toolbar.querySelector('.bluesky-dual-post-button');
+        if (existingButton) {
+          existingButton.remove();
+        }
+      } else if (!toolbar.querySelector('.bluesky-dual-post-button')) {
+        console.log('Adding dual post button to normal compose');
+        addDualPostButton(toolbar, postButton);
+        toolbar.classList.add('bluesky-dual-processed');
+      } else {
+        console.log('Dual post button already exists');
+        toolbar.classList.add('bluesky-dual-processed');
+      }
+    } else {
+      console.log('No post button found in toolbar');
+    }
+  });
+}
+
+function isReplyCompose(toolbar) {
+  // Strategy 1: Check if the post button says "Reply" instead of "Post"
+  const postButton = toolbar.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]');
+  if (postButton && postButton.textContent) {
+    const buttonText = postButton.textContent.toLowerCase();
+    console.log('Post button text:', buttonText);
+    if (buttonText === 'reply' || buttonText === 'reply all') {
+      console.log('Detected reply by button text');
+      return true;
+    }
+  }
+  
+  // Strategy 2: Look for reply indicators in the compose area
+  const composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]') || 
+                           toolbar.closest('[data-testid="toolBar"]')?.parentNode;
+  
+  if (composeContainer) {
+    // Very specific check for "Replying to @username" text
+    // This element should be a direct child/sibling, not deep in the tree
+    const replyingToElements = composeContainer.querySelectorAll('div');
+    for (const element of replyingToElements) {
+      if (element.textContent && 
+          element.textContent.startsWith('Replying to @') && 
+          element.textContent.length < 100 && // Short text, not the whole tweet
+          !element.querySelector('[data-testid="tweetText"]')) { // Not the tweet itself
+        console.log('Found "Replying to" indicator:', element.textContent);
+        return true;
+      }
+    }
+    
+    // Check for inline reply (when replying from timeline)
+    const inlineReply = toolbar.closest('[data-testid="inline-reply"]');
+    if (inlineReply) {
+      console.log('Detected inline reply');
+      return true;
+    }
+  }
+  
+  // Strategy 3: Check if we're in a reply modal specifically
+  // Only consider it a reply if we're on a status page AND the modal says "Reply"
+  if (window.location.pathname.includes('/status/') && !window.location.pathname.includes('/compose/tweet')) {
+    // We're on a tweet page - check if the compose area is for replying
+    const modal = toolbar.closest('[role="dialog"]');
+    if (modal) {
+      const modalHeading = modal.querySelector('[role="heading"]');
+      if (modalHeading && modalHeading.textContent && modalHeading.textContent.toLowerCase().includes('reply')) {
+        console.log('Detected reply modal');
+        return true;
+      }
+    }
+  }
+  
+  console.log('Not a reply - normal compose');
+  return false;
+}
+
+function recheckProcessedAreas() {
+  // Re-check all processed areas to see if they should have the button or not
+  const processedAreas = document.querySelectorAll('[data-testid="toolBar"].bluesky-dual-processed');
+  
+  processedAreas.forEach(toolbar => {
+    const existingButton = toolbar.querySelector('.bluesky-dual-post-button');
+    const postButton = toolbar.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]');
+    
+    if (isReplyCompose(toolbar)) {
+      // Should not have button - remove if exists
+      if (existingButton) {
+        console.log('Removing dual post button from reply compose');
+        existingButton.remove();
+      }
+    } else {
+      // Should have button - add if missing
+      if (!existingButton && postButton) {
+        console.log('Adding dual post button back to regular compose');
+        addDualPostButton(toolbar, postButton);
+      }
+    }
+  });
+}
+
+function addDualPostButton(toolbar, originalPostButton) {
+  // Create the dual post button
+  const dualButton = document.createElement('div');
+  dualButton.className = 'bluesky-dual-post-button';
+  dualButton.setAttribute('role', 'button');
+  dualButton.setAttribute('tabindex', '0');
+  dualButton.setAttribute('aria-label', 'Post to X and Bluesky');
+  
+  // Get the styles from the original post button
+  const originalStyles = window.getComputedStyle(originalPostButton);
+  
+  dualButton.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(45deg, #1d9bf0 0%, #00a8ff 100%);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    margin-left: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: ${originalStyles.fontFamily};
+    min-height: ${originalStyles.height};
+  `;
+  
+  dualButton.innerHTML = `
+    <span style="margin-right: 6px;">🦋</span>
+    <span>Post to X & Bsky</span>
+  `;
+  
+  // Add hover effect
+  dualButton.addEventListener('mouseenter', () => {
+    dualButton.style.transform = 'translateY(-1px)';
+    dualButton.style.boxShadow = '0 4px 12px rgba(0, 168, 255, 0.3)';
+  });
+  
+  dualButton.addEventListener('mouseleave', () => {
+    dualButton.style.transform = 'translateY(0)';
+    dualButton.style.boxShadow = 'none';
+  });
+  
+  // Add click handler
+  dualButton.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!isAuthenticated) {
+      showNotification('Please log in to Bluesky first', 'error');
+      return;
+    }
+    
+    const composeContent = extractComposeContent(toolbar);
+    console.log('Extracted content for dual post:', composeContent);
+    
+    if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
+      console.error('No content found. Text:', composeContent.text, 'Media:', composeContent.media);
+      showNotification('Please write something to post', 'error');
+      return;
+    }
+    
+    await handleDualPost(composeContent, originalPostButton);
+  });
+  
+  // Insert the button next to the original post button
+  originalPostButton.parentNode.insertBefore(dualButton, originalPostButton.nextSibling);
+  
+  console.log('Added dual post button to compose area');
+}
+
+function extractComposeContent(toolbar) {
+  const content = {
+    text: '',
+    media: []
+  };
+  
+  // Try multiple strategies to find the compose text area
+  // Strategy 1: Look for the main compose container
+  let composeContainer = toolbar.closest('[data-testid="toolBar"]')?.parentNode;
+  
+  // Strategy 2: Look for the modal or drawer container
+  if (!composeContainer) {
+    composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]');
+  }
+  
+  // Strategy 3: Look backwards from toolbar
+  if (!composeContainer) {
+    composeContainer = toolbar.parentElement?.parentElement;
+  }
+  
+  // Find text areas with multiple selectors
+  const textAreaSelectors = [
+    '[data-testid="tweetTextarea_0"]',
+    '[data-testid="tweetTextarea_1"]',
+    '[contenteditable="true"][role="textbox"]',
+    '[class*="DraftEditor-content"]',
+    '[data-contents="true"]',
+    '[aria-label*="Tweet text"]',
+    '[aria-label*="Post text"]',
+    '[aria-label*="Reply"]',
+    'div[contenteditable="true"]'
+  ];
+  
+  let textArea = null;
+  for (const selector of textAreaSelectors) {
+    textArea = composeContainer?.querySelector(selector) || document.querySelector(selector);
+    if (textArea) {
+      console.log('Found text area with selector:', selector);
+      break;
+    }
+  }
+  
+  if (textArea) {
+    // First try to get text directly
+    let fullText = textArea.textContent || textArea.innerText || '';
+    
+    // If that's empty or too short, use the tree walker method
+    if (fullText.length < 2) {
+      fullText = '';
+      const walker = document.createTreeWalker(
+        textArea,
+        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: function(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            if (node.nodeType === Node.ELEMENT_NODE && 
+                node.tagName === 'IMG' && 
+                (node.hasAttribute('alt') || node.src.includes('emoji'))) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
+        }
+      );
+      
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          fullText += node.textContent;
+        } else if (node.tagName === 'IMG' && node.alt) {
+          fullText += node.alt;
+        }
+      }
+    }
+    
+    // Clean up the text
+    content.text = fullText.replace(/\n\s*\n/g, '\n').trim();
+    console.log('Extracted text:', content.text);
+  } else {
+    console.warn('Could not find text area in compose interface');
+  }
+  
+  // Find attached media - look more broadly
+  const mediaContainerSelectors = [
+    '[data-testid="attachments"]',
+    '[class*="attach"]',
+    '[aria-label*="Media"]'
+  ];
+  
+  let mediaContainer = null;
+  for (const selector of mediaContainerSelectors) {
+    mediaContainer = composeContainer?.querySelector(selector) || document.querySelector(selector);
+    if (mediaContainer) break;
+  }
+  
+  if (mediaContainer) {
+    const mediaElements = mediaContainer.querySelectorAll('img, video');
+    mediaElements.forEach(media => {
+      if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
+        content.media.push({
+          type: 'image',
+          url: media.src,
+          alt: media.alt || ''
+        });
+      } else if (media.tagName === 'VIDEO') {
+        content.media.push({
+          type: 'video',
+          url: media.src || media.poster,
+          alt: 'Video'
+        });
+      }
+    });
+  }
+  
+  console.log('Final extracted compose content:', content);
+  return content;
+}
+
+async function handleDualPost(content, originalPostButton) {
+  // Disable the dual post button temporarily
+  const dualButton = document.querySelector('.bluesky-dual-post-button');
+  if (dualButton) {
+    dualButton.style.opacity = '0.5';
+    dualButton.style.pointerEvents = 'none';
+    dualButton.innerHTML = '<span>Posting...</span>';
+  }
+  
+  try {
+    console.log('Starting dual post process...');
+    
+    // Step 1: Post to Bluesky first
+    showNotification('Posting to Bluesky...', 'info');
+    
+    const blueskyResponse = await chrome.runtime.sendMessage({
+      action: 'postToBluesky',
+      text: content.text,
+      media: content.media || []
+    });
+    
+    if (!blueskyResponse || !blueskyResponse.success) {
+      throw new Error('Failed to post to Bluesky: ' + (blueskyResponse ? blueskyResponse.error : 'Unknown error'));
+    }
+    
+    console.log('Bluesky post successful, now posting to X...');
+    showNotification('Posted to Bluesky! Now posting to X...', 'info');
+    
+    // Step 2: Click the original X post button
+    originalPostButton.click();
+    
+    // Step 3: Show success message
+    setTimeout(() => {
+      let message = 'Successfully posted to both X and Bluesky! 🎉';
+      if (blueskyResponse.result && blueskyResponse.result.warnings && blueskyResponse.result.warnings.length > 0) {
+        message += ' Note: ' + blueskyResponse.result.warnings.join(' ');
+      }
+      showNotification(message, 'success');
+    }, 1000);
+    
+  } catch (error) {
+    console.error('Dual post failed:', error);
+    showNotification('Failed to post to Bluesky: ' + error.message, 'error');
+  } finally {
+    // Re-enable the dual post button
+    if (dualButton) {
+      dualButton.style.opacity = '1';
+      dualButton.style.pointerEvents = 'auto';
+      dualButton.innerHTML = '<span style="margin-right: 6px;">🦋</span><span>Post to X & Bsky</span>';
+    }
+  }
 }
 
 function extractTweetContent(tweetElement) {
