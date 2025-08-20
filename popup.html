@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X to Bluesky Reposter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <h1>X to Bluesky</h1>
+      <p class="subtitle">Repost from X.com to Bluesky</p>
+    </header>
+
+    <main class="popup-content">
+      <div id="login-section" class="section">
+        <h2>Connect to Bluesky</h2>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="identifier">Handle or Email</label>
+            <input 
+              type="text" 
+              id="identifier" 
+              placeholder="username.bsky.social or email@example.com"
+              required
+            >
+          </div>
+          <div class="form-group">
+            <label for="password">App Password</label>
+            <input 
+              type="password" 
+              id="password" 
+              placeholder="Enter your app password"
+              required
+            >
+            <small class="help-text">
+              <a href="https://bsky.app/settings/app-passwords" target="_blank">
+                Create an app password →
+              </a>
+            </small>
+          </div>
+          <button type="submit" class="btn btn-primary" id="login-btn">
+            Connect to Bluesky
+          </button>
+        </form>
+      </div>
+
+      <div id="authenticated-section" class="section" style="display: none;">
+        <div class="user-info">
+          <div class="user-avatar"></div>
+          <div class="user-details">
+            <h3 id="user-handle"></h3>
+            <p class="status-text">Connected to Bluesky</p>
+          </div>
+        </div>
+        
+        <div class="stats-container">
+          <div class="stat-item">
+            <span class="stat-label">Status</span>
+            <span class="stat-value status-indicator">Active</span>
+          </div>
+        </div>
+
+        <div class="instructions">
+          <h3>How to use:</h3>
+          <ol>
+            <li>Navigate to X.com</li>
+            <li>Click the "..." menu on any post</li>
+            <li>Select "Repost to Bluesky"</li>
+            <li>Add your comment and post!</li>
+          </ol>
+        </div>
+
+        <button class="btn btn-secondary" id="logout-btn">
+          Disconnect
+        </button>
+      </div>
+
+      <div id="error-message" class="error-message" style="display: none;"></div>
+    </main>
+
+    <footer class="popup-footer">
+      <p>Made with ♥ for the decentralized web</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

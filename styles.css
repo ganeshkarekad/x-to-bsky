@@ -1,0 +1,234 @@
+.bluesky-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.bluesky-modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+.bluesky-modal-header {
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bluesky-modal-header h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.bluesky-close-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.bluesky-close-btn:hover {
+  background: #f3f4f6;
+  color: #1a1a1a;
+}
+
+.bluesky-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.bluesky-text-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: vertical;
+  transition: all 0.2s;
+  margin-bottom: 16px;
+}
+
+.bluesky-text-input:focus {
+  outline: none;
+  border-color: #00a8ff;
+  box-shadow: 0 0 0 3px rgba(0, 168, 255, 0.1);
+}
+
+.bluesky-original-content {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.bluesky-original-header {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.bluesky-original-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+}
+
+.bluesky-original-images,
+.bluesky-original-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bluesky-original-images img,
+.bluesky-original-media img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.bluesky-original-media > div {
+  position: relative;
+  display: inline-block;
+}
+
+.bluesky-modal-footer {
+  padding: 20px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.bluesky-cancel-btn,
+.bluesky-post-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bluesky-cancel-btn {
+  background: #f3f4f6;
+  color: #4a4a4a;
+}
+
+.bluesky-cancel-btn:hover {
+  background: #e5e7eb;
+}
+
+.bluesky-post-btn {
+  background: linear-gradient(135deg, #00a8ff 0%, #0066cc 100%);
+  color: white;
+}
+
+.bluesky-post-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 168, 255, 0.3);
+}
+
+.bluesky-post-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bluesky-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 9999999;
+  transform: translateX(400px);
+  transition: transform 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.bluesky-notification-show {
+  transform: translateX(0);
+}
+
+.bluesky-notification-success {
+  background: #22c55e;
+  color: white;
+}
+
+.bluesky-notification-error {
+  background: #ef4444;
+  color: white;
+}
+
+.bluesky-notification-info {
+  background: #3b82f6;
+  color: white;
+}
+
+.bluesky-repost-option {
+  transition: background-color 0.2s;
+}
+
+.bluesky-repost-option:hover {
+  background-color: rgba(0, 168, 255, 0.1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
