@@ -6,7 +6,9 @@
   "permissions": [
     "storage",
     "identity",
-    "tabs"
+    "tabs",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://x.com/*",

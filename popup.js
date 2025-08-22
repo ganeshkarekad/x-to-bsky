@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const loginForm = document.getElementById('login-form');
   const loginBtn = document.getElementById('login-btn');
   const logoutBtn = document.getElementById('logout-btn');
+  const reconnectBtn = document.getElementById('reconnect-btn');
   const errorMessage = document.getElementById('error-message');
   const userHandle = document.getElementById('user-handle');
 
@@ -14,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const identifier = document.getElementById('identifier').value;
     const password = document.getElementById('password').value;
+    const rememberMe = document.getElementById('remember-me').checked;
     
     loginBtn.disabled = true;
     loginBtn.textContent = 'Connecting...';
@@ -23,7 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await chrome.runtime.sendMessage({
         action: 'authenticate',
         identifier: identifier,
-        password: password
+        password: password,
+        rememberMe: rememberMe
       });
 
       if (response.success) {
@@ -49,11 +52,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  reconnectBtn.addEventListener('click', async () => {
+    reconnectBtn.disabled = true;
+    reconnectBtn.textContent = 'Reconnecting...';
+    errorMessage.style.display = 'none';
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'reconnect' });
+      
+      if (response.success) {
+        showAuthenticatedState(response.session);
+        notifyContentScripts(true);
+        showSuccess('Session reconnected successfully');
+      } else {
+        showError(response.error || 'Failed to reconnect');
+      }
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      reconnectBtn.disabled = false;
+      reconnectBtn.textContent = 'Reconnect Session';
+    }
+  });
+
   async function checkAuthStatus() {
     const response = await chrome.runtime.sendMessage({ action: 'checkAuth' });
     
     if (response.authenticated && response.session) {
       showAuthenticatedState(response.session);
+      
+      // Check if credentials are stored
+      chrome.storage.local.get(['blueskyCredentials'], (result) => {
+        if (result.blueskyCredentials) {
+          // Add indicator that auto-reconnect is enabled
+          const statusIndicator = document.querySelector('.status-indicator');
+          if (statusIndicator) {
+            statusIndicator.textContent = 'Active (Auto-reconnect)';
+            statusIndicator.style.color = '#00ba7c';
+          }
+          // Show reconnect button when auto-reconnect is enabled
+          if (reconnectBtn) {
+            reconnectBtn.style.display = 'block';
+          }
+        }
+      });
     } else {
       showLoginState();
     }
@@ -83,6 +125,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function showError(message) {
     errorMessage.textContent = message;
     errorMessage.style.display = 'block';
+    errorMessage.style.color = '#ef4444';
+  }
+
+  function showSuccess(message) {
+    errorMessage.textContent = message;
+    errorMessage.style.display = 'block';
+    errorMessage.style.color = '#00ba7c';
+    setTimeout(() => {
+      errorMessage.style.display = 'none';
+    }, 3000);
   }
 
   function notifyContentScripts(authenticated) {

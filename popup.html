@@ -40,6 +40,15 @@
               </a>
             </small>
           </div>
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="remember-me" />
+              <span>Keep me logged in</span>
+            </label>
+            <small class="help-text" style="margin-top: 5px; display: block;">
+              Your credentials will be securely stored for automatic reconnection
+            </small>
+          </div>
           <button type="submit" class="btn btn-primary" id="login-btn">
             Connect to Bluesky
           </button>
@@ -72,9 +81,14 @@
           </ol>
         </div>
 
-        <button class="btn btn-secondary" id="logout-btn">
-          Disconnect
-        </button>
+        <div class="button-group">
+          <button class="btn btn-secondary" id="reconnect-btn" style="display: none;">
+            Reconnect Session
+          </button>
+          <button class="btn btn-secondary" id="logout-btn">
+            Disconnect
+          </button>
+        </div>
       </div>
 
       <div id="error-message" class="error-message" style="display: none;"></div>

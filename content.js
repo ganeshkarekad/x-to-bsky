@@ -305,16 +305,26 @@ function addDualPostButton(toolbar, originalPostButton) {
       return;
     }
     
-    const composeContent = extractComposeContent(toolbar);
-    console.log('Extracted content for dual post:', composeContent);
+    // Check if this is a thread
+    const threadContent = extractThreadContent(toolbar);
+    console.log('Thread detection result:', threadContent);
     
-    if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
-      console.error('No content found. Text:', composeContent.text, 'Media:', composeContent.media);
-      showNotification('Please write something to post', 'error');
-      return;
+    if (threadContent && threadContent.length > 1) {
+      console.log('Detected thread with', threadContent.length, 'posts');
+      await handleThreadDualPost(threadContent, originalPostButton);
+    } else {
+      console.log('Not a thread, extracting single post content');
+      const composeContent = extractComposeContent(toolbar);
+      console.log('Extracted content for dual post:', composeContent);
+      
+      if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
+        console.error('No content found. Text:', composeContent.text, 'Media:', composeContent.media);
+        showNotification('Please write something to post', 'error');
+        return;
+      }
+      
+      await handleDualPost(composeContent, originalPostButton);
     }
-    
-    await handleDualPost(composeContent, originalPostButton);
   });
   
   // Insert the button next to the original post button
@@ -400,40 +410,55 @@ function extractComposeContent(toolbar) {
       }
     }
     
-    // Clean up the text
-    content.text = fullText.replace(/\n\s*\n/g, '\n').trim();
+    // Clean up the text - preserve linebreaks
+    content.text = fullText.trim();
     console.log('Extracted text:', content.text);
   } else {
     console.warn('Could not find text area in compose interface');
   }
   
-  // Find attached media - look more broadly
-  const mediaContainerSelectors = [
-    '[data-testid="attachments"]',
-    '[class*="attach"]',
-    '[aria-label*="Media"]'
-  ];
-  
-  let mediaContainer = null;
-  for (const selector of mediaContainerSelectors) {
-    mediaContainer = composeContainer?.querySelector(selector) || document.querySelector(selector);
-    if (mediaContainer) break;
-  }
-  
-  if (mediaContainer) {
-    const mediaElements = mediaContainer.querySelectorAll('img, video');
-    mediaElements.forEach(media => {
-      if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
+  // Find attached media - only within the compose container
+  if (composeContainer) {
+    // Look for media attachments in the compose area
+    const mediaContainerSelectors = [
+      '[data-testid="attachments"]',
+      '[class*="attach"]',
+      '[aria-label*="Media"]'
+    ];
+    
+    let mediaContainer = null;
+    for (const selector of mediaContainerSelectors) {
+      mediaContainer = composeContainer.querySelector(selector);
+      if (mediaContainer) break;
+    }
+    
+    if (mediaContainer) {
+      const mediaElements = mediaContainer.querySelectorAll('img, video');
+      mediaElements.forEach(media => {
+        if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
+          content.media.push({
+            type: 'image',
+            url: media.src,
+            alt: media.alt || ''
+          });
+        } else if (media.tagName === 'VIDEO') {
+          content.media.push({
+            type: 'video',
+            url: media.src || media.poster,
+            alt: 'Video'
+          });
+        }
+      });
+    }
+    
+    // Also check for images directly in the compose container (Twitter sometimes places them differently)
+    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com/media"]');
+    directImages.forEach(img => {
+      if (!img.src.includes('emoji') && !content.media.some(m => m.url === img.src)) {
         content.media.push({
           type: 'image',
-          url: media.src,
-          alt: media.alt || ''
-        });
-      } else if (media.tagName === 'VIDEO') {
-        content.media.push({
-          type: 'video',
-          url: media.src || media.poster,
-          alt: 'Video'
+          url: img.src,
+          alt: img.alt || ''
         });
       }
     });
@@ -441,6 +466,163 @@ function extractComposeContent(toolbar) {
   
   console.log('Final extracted compose content:', content);
   return content;
+}
+
+function extractThreadContent(toolbar) {
+  // Look for thread indicators
+  const composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]') || 
+                           toolbar.closest('[data-testid="toolBar"]')?.parentNode;
+  
+  if (!composeContainer) {
+    console.log('No compose container found for thread detection');
+    return null;
+  }
+  
+  // Look for multiple tweet text areas (thread indicator)
+  // Check for at least tweetTextarea_0 AND tweetTextarea_1 to confirm it's a thread
+  const textArea0 = composeContainer.querySelector('[data-testid="tweetTextarea_0"]');
+  const textArea1 = composeContainer.querySelector('[data-testid="tweetTextarea_1"]');
+  
+  console.log('Thread detection - textArea0:', !!textArea0, 'textArea1:', !!textArea1);
+  
+  // Only consider it a thread if we have at least 2 text areas
+  if (!textArea0 || !textArea1) {
+    return null;
+  }
+  
+  // Get all text areas in the thread
+  const textAreas = composeContainer.querySelectorAll('[data-testid^="tweetTextarea_"]');
+  console.log('Found', textAreas.length, 'text areas for thread');
+  
+  const thread = [];
+  
+  // Extract content from each tweet in the thread
+  textAreas.forEach((textArea, index) => {
+    const tweetContainer = textArea.closest('[data-testid^="cellInnerDiv"], [data-testid^="tweet-box-"]') || textArea.parentElement;
+    
+    const content = {
+      text: '',
+      media: []
+    };
+    
+    // Extract text
+    let fullText = textArea.textContent || textArea.innerText || '';
+    
+    if (fullText.length < 2) {
+      fullText = '';
+      const walker = document.createTreeWalker(
+        textArea,
+        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: function(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            if (node.nodeType === Node.ELEMENT_NODE && 
+                node.tagName === 'IMG' && 
+                (node.hasAttribute('alt') || node.src.includes('emoji'))) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
+        }
+      );
+      
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          fullText += node.textContent;
+        } else if (node.tagName === 'IMG' && node.alt) {
+          fullText += node.alt;
+        }
+      }
+    }
+    
+    content.text = fullText.trim();
+    
+    // Look for media in this specific tweet
+    const mediaContainer = tweetContainer?.querySelector('[data-testid="attachments"], [class*="attach"]');
+    if (mediaContainer) {
+      const mediaElements = mediaContainer.querySelectorAll('img, video');
+      mediaElements.forEach(media => {
+        if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
+          content.media.push({
+            type: 'image',
+            url: media.src,
+            alt: media.alt || ''
+          });
+        } else if (media.tagName === 'VIDEO') {
+          content.media.push({
+            type: 'video',
+            url: media.src || media.poster,
+            alt: 'Video'
+          });
+        }
+      });
+    }
+    
+    if (content.text || content.media.length > 0) {
+      thread.push(content);
+    }
+  });
+  
+  return thread.length > 0 ? thread : null;
+}
+
+async function handleThreadDualPost(threadContent, originalPostButton) {
+  // Disable the dual post button temporarily
+  const dualButton = document.querySelector('.bluesky-dual-post-button');
+  if (dualButton) {
+    dualButton.style.opacity = '0.5';
+    dualButton.style.pointerEvents = 'none';
+    dualButton.innerHTML = '<span>Posting thread...</span>';
+  }
+  
+  try {
+    console.log('Starting thread dual post process...');
+    
+    // Show notification about posting thread
+    showNotification(`Posting thread with ${threadContent.length} posts to Bluesky...`, 'info');
+    
+    // Send thread to background script
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({
+        action: 'postBlueskyThread',
+        thread: threadContent
+      });
+    } catch (err) {
+      if (err.message && err.message.includes('Extension context invalidated')) {
+        throw new Error('Extension was updated or reloaded. Please refresh the page and try again.');
+      }
+      throw err;
+    }
+    
+    if (response && response.success) {
+      console.log('Bluesky thread posted successfully');
+      
+      // Now click the X post button to post the thread there
+      originalPostButton.click();
+      
+      // Show success message
+      setTimeout(() => {
+        showNotification(`Successfully posted ${threadContent.length}-part thread to both X and Bluesky! 🧵`, 'success');
+      }, 1000);
+    } else {
+      throw new Error('Failed to post thread to Bluesky: ' + (response ? response.error : 'Unknown error'));
+    }
+    
+  } catch (error) {
+    console.error('Thread dual post failed:', error);
+    showNotification('Failed to post thread to Bluesky: ' + error.message, 'error');
+  } finally {
+    // Re-enable the dual post button
+    if (dualButton) {
+      dualButton.style.opacity = '1';
+      dualButton.style.pointerEvents = 'auto';
+      dualButton.innerHTML = '<span style="margin-right: 6px;">🦋</span><span>Post to X & Bsky</span>';
+    }
+  }
 }
 
 async function handleDualPost(content, originalPostButton) {
@@ -458,11 +640,19 @@ async function handleDualPost(content, originalPostButton) {
     // Step 1: Post to Bluesky first
     showNotification('Posting to Bluesky...', 'info');
     
-    const blueskyResponse = await chrome.runtime.sendMessage({
-      action: 'postToBluesky',
-      text: content.text,
-      media: content.media || []
-    });
+    let blueskyResponse;
+    try {
+      blueskyResponse = await chrome.runtime.sendMessage({
+        action: 'postToBluesky',
+        text: content.text,
+        media: content.media || []
+      });
+    } catch (err) {
+      if (err.message && err.message.includes('Extension context invalidated')) {
+        throw new Error('Extension was updated or reloaded. Please refresh the page and try again.');
+      }
+      throw err;
+    }
     
     if (!blueskyResponse || !blueskyResponse.success) {
       throw new Error('Failed to post to Bluesky: ' + (blueskyResponse ? blueskyResponse.error : 'Unknown error'));
@@ -733,12 +923,20 @@ function showRepostModal(content) {
       console.log('Sending post to Bluesky:', fullText);
       console.log('Text includes emojis:', /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(fullText));
       
-      const response = await chrome.runtime.sendMessage({
-        action: 'postToBluesky',
-        text: fullText,
-        media: content.media || [],
-        images: content.images // Keep for backward compatibility
-      });
+      let response;
+      try {
+        response = await chrome.runtime.sendMessage({
+          action: 'postToBluesky',
+          text: fullText,
+          media: content.media || [],
+          images: content.images // Keep for backward compatibility
+        });
+      } catch (err) {
+        if (err.message && err.message.includes('Extension context invalidated')) {
+          throw new Error('Extension was updated or reloaded. Please refresh the page and try again.');
+        }
+        throw err;
+      }
 
       console.log('Response from background:', response);
 
