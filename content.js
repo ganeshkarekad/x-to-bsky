@@ -346,6 +346,7 @@ function addDualPostButton(toolbar, originalPostButton) {
     
     // Add click handler
     dualButton.addEventListener('click', async (e) => {
+      console.log('=== DUAL POST BUTTON CLICKED ===');
       e.preventDefault();
       e.stopPropagation();
       
@@ -353,6 +354,10 @@ function addDualPostButton(toolbar, originalPostButton) {
         showNotification('Please log in to Bluesky first', 'error');
         return;
       }
+      
+      // Log the toolbar element
+      console.log('Toolbar element:', toolbar);
+      console.log('Toolbar parent:', toolbar.parentElement);
       
       // Check if this is a thread
       const threadContent = extractThreadContent(toolbar);
@@ -497,6 +502,15 @@ function extractComposeContent(toolbar) {
   // Find attached media - within the compose container or broader search
   if (composeContainer) {
     console.log('Looking for media in compose container');
+    console.log('Compose container HTML preview:', composeContainer.innerHTML.substring(0, 500));
+    
+    // First, let's see all images in the container
+    const allImages = composeContainer.querySelectorAll('img');
+    console.log('ALL images found in container:', allImages.length);
+    allImages.forEach((img, index) => {
+      console.log(`Image ${index}: src=${img.src?.substring(0, 100)}, alt=${img.alt}, class=${img.className}`);
+    });
+    
     // Look for media attachments in the compose area - expanded selectors
     const mediaContainerSelectors = [
       '[data-testid="attachments"]',
@@ -556,8 +570,9 @@ function extractComposeContent(toolbar) {
     
     // Also check for images directly in the compose container (Twitter sometimes places them differently)
     console.log('Checking for direct images in compose container');
-    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com/media"], img[draggable="true"]');
-    console.log('Found', directImages.length, 'direct images');
+    // Expand the selector to catch more image types including pasted images
+    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com"], img[src*="twimg.com"], img[draggable="true"], img[alt]:not([src*="emoji"])');
+    console.log('Found', directImages.length, 'direct images with expanded selectors');
     
     for (const img of directImages) {
       // Skip profile images, emojis, and already processed images
@@ -575,13 +590,22 @@ function extractComposeContent(toolbar) {
   } else {
     // Fallback: If no compose container found, look in the entire document near the toolbar
     console.log('No compose container found, using fallback media search');
-    const fallbackImages = document.querySelectorAll('[role="dialog"] img[src*="blob:"], [role="dialog"] img[src*="pbs.twimg.com/media"]');
-    console.log('Fallback search found', fallbackImages.length, 'images');
     
-    for (const img of fallbackImages) {
-      if (!img.src.includes('emoji') && 
-          !img.src.includes('profile_images') &&
-          !content.media.some(m => m.url === img.src)) {
+    // Try to find images in any dialog or modal
+    const fallbackImages = document.querySelectorAll('[role="dialog"] img, [aria-modal="true"] img, [data-testid="tweetComposer"] img');
+    console.log('Fallback search found', fallbackImages.length, 'total images');
+    
+    // Filter to only relevant images
+    const relevantImages = Array.from(fallbackImages).filter(img => 
+      img.src && 
+      !img.src.includes('emoji') && 
+      !img.src.includes('profile_images') &&
+      (img.src.includes('blob:') || img.src.includes('pbs.twimg.com') || img.src.includes('twimg.com/media'))
+    );
+    console.log('Filtered to', relevantImages.length, 'relevant images');
+    
+    for (const img of relevantImages) {
+      if (!content.media.some(m => m.url === img.src)) {
         console.log('Processing fallback image:', img.src.substring(0, 50));
         content.media.push({
           type: 'image',
