@@ -8,73 +8,101 @@ chrome.runtime.sendMessage({ action: 'checkAuth' }, (response) => {
 });
 
 function injectBlueskyOption() {
-  // Track clicks on "More" buttons to know which tweet is active
-  document.addEventListener('click', (e) => {
-    const moreButton = e.target.closest('[aria-label*="More"], [data-testid="caret"], [aria-haspopup="menu"]');
-    if (moreButton) {
-      // Find the parent tweet
-      const tweet = moreButton.closest('article');
-      if (tweet) {
-        currentTweetElement = tweet;
-        console.log('Tracked tweet for dropdown:', tweet);
+  try {
+    console.log('Starting Bluesky option injection...');
+    
+    // Track clicks on "More" buttons to know which tweet is active
+    document.addEventListener('click', (e) => {
+      try {
+        const moreButton = e.target.closest('[aria-label*="More"], [data-testid="caret"], [aria-haspopup="menu"]');
+        if (moreButton) {
+          // Find the parent tweet
+          const tweet = moreButton.closest('article');
+          if (tweet) {
+            currentTweetElement = tweet;
+            console.log('Tracked tweet for dropdown:', tweet);
+          }
+        }
+      } catch (err) {
+        console.error('Error in click handler:', err);
       }
-    }
-  }, true);
+    }, true);
 
-  // Set up observer to watch for dropdown menus and compose areas
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList') {
-        // Process any newly added nodes that might be dropdown menus
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === 1) { // Element node
-            processDropdownMenu(node);
-            // Also check children
-            const dropdowns = node.querySelectorAll('[role="menu"]');
-            dropdowns.forEach(dropdown => processDropdownMenu(dropdown));
+    // Set up observer to watch for dropdown menus and compose areas
+    const observer = new MutationObserver((mutations) => {
+      try {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'childList') {
+            // Process any newly added nodes that might be dropdown menus
+            mutation.addedNodes.forEach(node => {
+              if (node.nodeType === 1) { // Element node
+                try {
+                  processDropdownMenu(node);
+                  // Also check children
+                  const dropdowns = node.querySelectorAll('[role="menu"]');
+                  dropdowns.forEach(dropdown => processDropdownMenu(dropdown));
+                  
+                  // Check for compose tweet areas
+                  processComposeTweetAreas(node);
+                } catch (err) {
+                  console.error('Error processing node:', err);
+                }
+              }
+            });
             
-            // Check for compose tweet areas
-            processComposeTweetAreas(node);
+            // Also check for compose tweet areas in existing DOM
+            processComposeTweetAreas(document);
+            
+            // Re-check existing processed areas in case they changed from regular to reply
+            recheckProcessedAreas();
           }
         });
-        
-        // Also check for compose tweet areas in existing DOM
-        processComposeTweetAreas(document);
-        
-        // Re-check existing processed areas in case they changed from regular to reply
-        recheckProcessedAreas();
+      } catch (err) {
+        console.error('Error in MutationObserver:', err);
       }
     });
-  });
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
-  
-  // Initial processing
-  processComposeTweetAreas(document);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+    
+    // Initial processing with a small delay to ensure DOM is ready
+    console.log('Scheduling initial processComposeTweetAreas...');
+    setTimeout(() => {
+      console.log('Running initial processComposeTweetAreas...');
+      processComposeTweetAreas(document);
+      console.log('Initial processing complete');
+    }, 1000);
+    
+  } catch (error) {
+    console.error('Error in injectBlueskyOption:', error);
+  }
 }
 
 function processDropdownMenu(menuElement) {
-  // Check if this is a dropdown menu and hasn't been processed
-  if (menuElement.getAttribute('role') === 'menu' && !menuElement.querySelector('.bluesky-repost-option')) {
-    console.log('Processing dropdown menu:', menuElement);
-    
-    // Look for menu items in the dropdown
-    const menuItems = menuElement.querySelectorAll('[role="menuitem"]');
-    
-    if (menuItems.length > 0) {
-      // Find the last menu item to insert after
-      const lastMenuItem = menuItems[menuItems.length - 1];
-      const blueskyOption = createBlueskyMenuItem(lastMenuItem);
+  try {
+    // Check if this is a dropdown menu and hasn't been processed
+    if (menuElement.getAttribute('role') === 'menu' && !menuElement.querySelector('.bluesky-repost-option')) {
+      console.log('Processing dropdown menu:', menuElement);
       
-      if (blueskyOption) {
-        // Insert the Bluesky option
-        lastMenuItem.parentNode.insertBefore(blueskyOption, lastMenuItem.nextSibling);
-        console.log('Injected Bluesky option into dropdown');
+      // Look for menu items in the dropdown
+      const menuItems = menuElement.querySelectorAll('[role="menuitem"]');
+      
+      if (menuItems.length > 0) {
+        // Find the last menu item to insert after
+        const lastMenuItem = menuItems[menuItems.length - 1];
+        const blueskyOption = createBlueskyMenuItem(lastMenuItem);
+        
+        if (blueskyOption) {
+          // Insert the Bluesky option
+          lastMenuItem.parentNode.insertBefore(blueskyOption, lastMenuItem.nextSibling);
+          console.log('Injected Bluesky option into dropdown');
+        }
       }
     }
+  } catch (error) {
+    console.error('Error in processDropdownMenu:', error);
   }
 }
 
@@ -107,25 +135,35 @@ function createBlueskyMenuItem(referenceMenuItem) {
     option.style.backgroundColor = 'transparent';
   });
 
-  option.addEventListener('click', (e) => {
+  option.addEventListener('click', async (e) => {
     console.log('Bluesky option clicked!');
     e.preventDefault();
     e.stopPropagation();
     
-    // Use the tracked tweet element
-    if (currentTweetElement) {
-      console.log('Using tracked tweet:', currentTweetElement);
-      
-      // Close the dropdown by clicking outside
-      document.body.click();
-      
-      // Small delay to let dropdown close
-      setTimeout(() => {
-        handleRepostToBluesky(currentTweetElement);
-      }, 100);
-    } else {
-      console.error('No tweet element found');
-      showNotification('Could not identify the tweet. Please try again.', 'error');
+    try {
+      // Use the tracked tweet element
+      if (currentTweetElement) {
+        console.log('Using tracked tweet:', currentTweetElement);
+        
+        // Close the dropdown by clicking outside
+        document.body.click();
+        
+        // Small delay to let dropdown close
+        setTimeout(async () => {
+          try {
+            await handleRepostToBluesky(currentTweetElement);
+          } catch (err) {
+            console.error('Error handling repost:', err);
+            showNotification('Failed to repost: ' + err.message, 'error');
+          }
+        }, 100);
+      } else {
+        console.error('No tweet element found');
+        showNotification('Could not identify the tweet. Please try again.', 'error');
+      }
+    } catch (error) {
+      console.error('Error in Bluesky option click:', error);
+      showNotification('An error occurred. Please try again.', 'error');
     }
   });
 
@@ -133,41 +171,49 @@ function createBlueskyMenuItem(referenceMenuItem) {
 }
 
 function processComposeTweetAreas(container) {
-  // Find compose tweet areas that haven't been processed
-  const composeAreas = container.querySelectorAll('[data-testid="toolBar"]:not(.bluesky-dual-processed)');
-  
-  console.log('Found', composeAreas.length, 'unprocessed compose areas');
-  
-  composeAreas.forEach(toolbar => {
-    // Check if this is actually a compose toolbar (has a Post button)
-    const postButton = toolbar.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]');
-    if (postButton) {
-      console.log('Found post button with text:', postButton.textContent);
-      
-      // Check if this is a reply
-      const isReply = isReplyCompose(toolbar);
-      console.log('Is reply?', isReply);
-      
-      if (isReply) {
-        console.log('Skipping dual post button for reply compose');
-        toolbar.classList.add('bluesky-dual-processed');
-        // Remove existing button if it exists
-        const existingButton = toolbar.querySelector('.bluesky-dual-post-button');
-        if (existingButton) {
-          existingButton.remove();
+  try {
+    // Find compose tweet areas that haven't been processed
+    const composeAreas = container.querySelectorAll('[data-testid="toolBar"]:not(.bluesky-dual-processed)');
+    
+    console.log('Found', composeAreas.length, 'unprocessed compose areas');
+    
+    composeAreas.forEach(toolbar => {
+      try {
+        // Check if this is actually a compose toolbar (has a Post button)
+        const postButton = toolbar.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]');
+        if (postButton) {
+          console.log('Found post button with text:', postButton.textContent);
+          
+          // Check if this is a reply
+          const isReply = isReplyCompose(toolbar);
+          console.log('Is reply?', isReply);
+          
+          if (isReply) {
+            console.log('Skipping dual post button for reply compose');
+            toolbar.classList.add('bluesky-dual-processed');
+            // Remove existing button if it exists
+            const existingButton = toolbar.querySelector('.bluesky-dual-post-button');
+            if (existingButton) {
+              existingButton.remove();
+            }
+          } else if (!toolbar.querySelector('.bluesky-dual-post-button')) {
+            console.log('Adding dual post button to normal compose');
+            addDualPostButton(toolbar, postButton);
+            toolbar.classList.add('bluesky-dual-processed');
+          } else {
+            console.log('Dual post button already exists');
+            toolbar.classList.add('bluesky-dual-processed');
+          }
+        } else {
+          console.log('No post button found in toolbar');
         }
-      } else if (!toolbar.querySelector('.bluesky-dual-post-button')) {
-        console.log('Adding dual post button to normal compose');
-        addDualPostButton(toolbar, postButton);
-        toolbar.classList.add('bluesky-dual-processed');
-      } else {
-        console.log('Dual post button already exists');
-        toolbar.classList.add('bluesky-dual-processed');
+      } catch (err) {
+        console.error('Error processing toolbar:', err);
       }
-    } else {
-      console.log('No post button found in toolbar');
-    }
-  });
+    });
+  } catch (error) {
+    console.error('Error in processComposeTweetAreas:', error);
+  }
 }
 
 function isReplyCompose(toolbar) {
@@ -251,86 +297,92 @@ function recheckProcessedAreas() {
 }
 
 function addDualPostButton(toolbar, originalPostButton) {
-  // Create the dual post button
-  const dualButton = document.createElement('div');
-  dualButton.className = 'bluesky-dual-post-button';
-  dualButton.setAttribute('role', 'button');
-  dualButton.setAttribute('tabindex', '0');
-  dualButton.setAttribute('aria-label', 'Post to X and Bluesky');
-  
-  // Get the styles from the original post button
-  const originalStyles = window.getComputedStyle(originalPostButton);
-  
-  dualButton.style.cssText = `
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(45deg, #1d9bf0 0%, #00a8ff 100%);
-    color: white;
-    border: none;
-    border-radius: 20px;
-    padding: 8px 16px;
-    margin-left: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-family: ${originalStyles.fontFamily};
-    min-height: ${originalStyles.height};
-  `;
-  
-  dualButton.innerHTML = `
-    <span style="margin-right: 6px;">🦋</span>
-    <span>Post to X & Bsky</span>
-  `;
-  
-  // Add hover effect
-  dualButton.addEventListener('mouseenter', () => {
-    dualButton.style.transform = 'translateY(-1px)';
-    dualButton.style.boxShadow = '0 4px 12px rgba(0, 168, 255, 0.3)';
-  });
-  
-  dualButton.addEventListener('mouseleave', () => {
-    dualButton.style.transform = 'translateY(0)';
-    dualButton.style.boxShadow = 'none';
-  });
-  
-  // Add click handler
-  dualButton.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  try {
+    console.log('Creating dual post button...');
     
-    if (!isAuthenticated) {
-      showNotification('Please log in to Bluesky first', 'error');
-      return;
-    }
+    // Create the dual post button
+    const dualButton = document.createElement('div');
+    dualButton.className = 'bluesky-dual-post-button';
+    dualButton.setAttribute('role', 'button');
+    dualButton.setAttribute('tabindex', '0');
+    dualButton.setAttribute('aria-label', 'Post to X and Bluesky');
     
-    // Check if this is a thread
-    const threadContent = await extractThreadContent(toolbar);
-    console.log('Thread detection result:', threadContent);
+    // Get the styles from the original post button
+    const originalStyles = window.getComputedStyle(originalPostButton);
     
-    if (threadContent && threadContent.length > 1) {
-      console.log('Detected thread with', threadContent.length, 'posts');
-      await handleThreadDualPost(threadContent, originalPostButton);
-    } else {
-      console.log('Not a thread, extracting single post content');
-      const composeContent = await extractComposeContent(toolbar);
-      console.log('Extracted content for dual post:', composeContent);
+    dualButton.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(45deg, #1d9bf0 0%, #00a8ff 100%);
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 16px;
+      margin-left: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: ${originalStyles.fontFamily};
+      min-height: ${originalStyles.height};
+    `;
+    
+    dualButton.innerHTML = `
+      <span style="margin-right: 6px;">🦋</span>
+      <span>Post to X & Bsky</span>
+    `;
+    
+    // Add hover effect
+    dualButton.addEventListener('mouseenter', () => {
+      dualButton.style.transform = 'translateY(-1px)';
+      dualButton.style.boxShadow = '0 4px 12px rgba(0, 168, 255, 0.3)';
+    });
+    
+    dualButton.addEventListener('mouseleave', () => {
+      dualButton.style.transform = 'translateY(0)';
+      dualButton.style.boxShadow = 'none';
+    });
+    
+    // Add click handler
+    dualButton.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       
-      if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
-        console.error('No content found. Text:', composeContent.text, 'Media:', composeContent.media);
-        showNotification('Please write something to post', 'error');
+      if (!isAuthenticated) {
+        showNotification('Please log in to Bluesky first', 'error');
         return;
       }
       
-      await handleDualPost(composeContent, originalPostButton);
-    }
-  });
+      // Check if this is a thread
+      const threadContent = await extractThreadContent(toolbar);
+      console.log('Thread detection result:', threadContent);
+      
+      if (threadContent && threadContent.length > 1) {
+        console.log('Detected thread with', threadContent.length, 'posts');
+        await handleThreadDualPost(threadContent, originalPostButton);
+      } else {
+        console.log('Not a thread, extracting single post content');
+        const composeContent = await extractComposeContent(toolbar);
+        console.log('Extracted content for dual post:', composeContent);
+        
+        if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
+          console.error('No content found. Text:', composeContent.text, 'Media:', composeContent.media);
+          showNotification('Please write something to post', 'error');
+          return;
+        }
+        
+        await handleDualPost(composeContent, originalPostButton);
+      }
+    });
   
-  // Insert the button next to the original post button
-  originalPostButton.parentNode.insertBefore(dualButton, originalPostButton.nextSibling);
-  
-  console.log('Added dual post button to compose area');
+    // Insert the button next to the original post button
+    originalPostButton.parentNode.insertBefore(dualButton, originalPostButton.nextSibling);
+    
+    console.log('Added dual post button to compose area');
+  } catch (error) {
+    console.error('Error in addDualPostButton:', error);
+  }
 }
 
 // Helper function to convert blob URL to base64
@@ -1154,4 +1206,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-console.log('X to Bluesky extension loaded');
+console.log('X to Bluesky extension loaded - version 1.0.1');
+console.log('Current URL:', window.location.href);
+console.log('Document ready state:', document.readyState);
