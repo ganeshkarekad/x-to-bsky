@@ -392,31 +392,52 @@ function addDualPostButton(toolbar, originalPostButton) {
 
 
 function extractComposeContent(toolbar) {
+  console.log('=== EXTRACTING COMPOSE CONTENT ===');
   const content = {
     text: '',
     media: []
   };
   
   // Try multiple strategies to find the compose text area
-  // Strategy 1: Look for the main compose container
-  let composeContainer = toolbar.closest('[data-testid="toolBar"]')?.parentNode;
+  // The toolbar itself is not the container - we need to go up further
+  console.log('Strategy 1: Looking for dialog container');
+  // Strategy 1: Look for the modal/dialog that contains everything
+  let composeContainer = toolbar.closest('[role="dialog"]');
+  console.log('Strategy 1 result:', !!composeContainer);
   
-  // Strategy 2: Look for the modal or drawer container
+  // Strategy 2: Look for the primary column container
   if (!composeContainer) {
-    composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]');
+    console.log('Strategy 2: Looking for primary column');
+    composeContainer = toolbar.closest('[data-testid="primaryColumn"]');
+    console.log('Strategy 2 result:', !!composeContainer);
   }
   
-  // Strategy 3: Look backwards from toolbar
+  // Strategy 3: Go up multiple levels from toolbar
   if (!composeContainer) {
-    composeContainer = toolbar.parentElement?.parentElement;
+    console.log('Strategy 3: Looking up multiple parent levels');
+    // Go up the tree until we find a container with the text area
+    let parent = toolbar.parentElement;
+    while (parent && !parent.querySelector('[data-testid="tweetTextarea_0"]')) {
+      parent = parent.parentElement;
+      if (parent?.querySelector('[data-testid="tweetTextarea_0"]')) {
+        composeContainer = parent;
+        break;
+      }
+    }
+    console.log('Strategy 3 result:', !!composeContainer);
   }
   
   // Strategy 4: Look for the broader compose tweet modal
   if (!composeContainer) {
+    console.log('Strategy 4: Looking for modal header or tweet composer');
     composeContainer = toolbar.closest('[aria-labelledby="modal-header"], [data-testid="tweetComposer"]');
+    console.log('Strategy 4 result:', !!composeContainer);
   }
   
-  console.log('Compose container found:', !!composeContainer);
+  console.log('Final compose container found:', !!composeContainer);
+  if (composeContainer) {
+    console.log('Container element:', composeContainer.tagName, 'with classes:', composeContainer.className);
+  }
   
   // Find text areas with multiple selectors
   const textAreaSelectors = [
@@ -522,7 +543,11 @@ function extractComposeContent(toolbar) {
       // Additional selectors for media
       'div[style*="background-image"]', // Sometimes images are backgrounds
       '[data-testid="media-attachment"]',
-      'div[role="group"] img' // Media in groups
+      'div[role="group"] img', // Media in groups
+      // More specific selectors for pasted images
+      'div[data-testid] img[draggable="false"]',
+      'div[role="button"] img',
+      'div[tabindex] img'
     ];
     
     let mediaContainer = null;
@@ -800,6 +825,14 @@ async function handleThreadDualPost(threadContent, originalPostButton) {
 }
 
 async function handleDualPost(content, originalPostButton) {
+  console.log('=== HANDLE DUAL POST CALLED ===');
+  console.log('Content received:', {
+    textLength: content.text?.length,
+    hasText: !!content.text,
+    mediaCount: content.media?.length || 0,
+    media: content.media
+  });
+  
   // Disable the dual post button temporarily
   const dualButton = document.querySelector('.bluesky-dual-post-button');
   if (dualButton) {
