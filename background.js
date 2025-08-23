@@ -514,6 +514,9 @@ async function attemptPost(text, media, retryCount) {
   console.log('Final record text:', record.text);
   console.log('Record has line breaks:', record.text.includes('\n'));
   console.log('Record has embed:', !!record.embed);
+  if (record.embed && record.embed.images) {
+    console.log('Record has', record.embed.images.length, 'images attached');
+  }
 
   try {
     console.log('Attempting to post with session:', {

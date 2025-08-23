@@ -422,6 +422,13 @@ async function extractComposeContent(toolbar) {
     composeContainer = toolbar.parentElement?.parentElement;
   }
   
+  // Strategy 4: Look for the broader compose tweet modal
+  if (!composeContainer) {
+    composeContainer = toolbar.closest('[aria-labelledby="modal-header"], [data-testid="tweetComposer"]');
+  }
+  
+  console.log('Compose container found:', !!composeContainer);
+  
   // Find text areas with multiple selectors
   const textAreaSelectors = [
     '[data-testid="tweetTextarea_0"]',
@@ -503,25 +510,48 @@ async function extractComposeContent(toolbar) {
     console.warn('Could not find text area in compose interface');
   }
   
-  // Find attached media - only within the compose container
+  // Find attached media - within the compose container or broader search
   if (composeContainer) {
-    // Look for media attachments in the compose area
+    console.log('Looking for media in compose container');
+    // Look for media attachments in the compose area - expanded selectors
     const mediaContainerSelectors = [
       '[data-testid="attachments"]',
       '[class*="attach"]',
-      '[aria-label*="Media"]'
+      '[aria-label*="Media"]',
+      'div[dir="auto"] > div > div > div > img', // Common pattern for attached images
+      '[data-testid="tweetMediaContainer"]',
+      '[data-testid="media-preview"]',
+      // Additional selectors for media
+      'div[style*="background-image"]', // Sometimes images are backgrounds
+      '[data-testid="media-attachment"]',
+      'div[role="group"] img' // Media in groups
     ];
     
     let mediaContainer = null;
     for (const selector of mediaContainerSelectors) {
       mediaContainer = composeContainer.querySelector(selector);
-      if (mediaContainer) break;
+      if (mediaContainer) {
+        console.log('Found media container with selector:', selector);
+        break;
+      }
+    }
+    
+    // If no container found, look for parent of any image
+    if (!mediaContainer) {
+      const anyImage = composeContainer.querySelector('img[src*="blob:"], img[src*="pbs.twimg.com/media"]');
+      if (anyImage) {
+        mediaContainer = anyImage.parentElement;
+        console.log('Using parent of found image as media container');
+      }
     }
     
     if (mediaContainer) {
       const mediaElements = mediaContainer.querySelectorAll('img, video');
+      console.log('Found', mediaElements.length, 'media elements in container');
+      
       for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
+          console.log('Processing image from container:', media.src.substring(0, 50));
           let mediaData = {
             type: 'image',
             url: media.src,
@@ -539,6 +569,7 @@ async function extractComposeContent(toolbar) {
           
           content.media.push(mediaData);
         } else if (media.tagName === 'VIDEO') {
+          console.log('Processing video from container');
           content.media.push({
             type: 'video',
             url: media.src || media.poster,
@@ -546,12 +577,22 @@ async function extractComposeContent(toolbar) {
           });
         }
       }
+    } else {
+      console.log('No media container found, will rely on direct image search');
     }
     
     // Also check for images directly in the compose container (Twitter sometimes places them differently)
-    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com/media"]');
+    console.log('Checking for direct images in compose container');
+    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com/media"], img[draggable="true"]');
+    console.log('Found', directImages.length, 'direct images');
+    
     for (const img of directImages) {
-      if (!img.src.includes('emoji') && !content.media.some(m => m.url === img.src)) {
+      // Skip profile images, emojis, and already processed images
+      if (!img.src.includes('emoji') && 
+          !img.src.includes('profile_images') && 
+          !img.src.includes('emoji') &&
+          !content.media.some(m => m.url === img.src)) {
+        console.log('Processing direct image:', img.src.substring(0, 50));
         let mediaData = {
           type: 'image',
           url: img.src,
@@ -570,9 +611,41 @@ async function extractComposeContent(toolbar) {
         content.media.push(mediaData);
       }
     }
+  } else {
+    // Fallback: If no compose container found, look in the entire document near the toolbar
+    console.log('No compose container found, using fallback media search');
+    const fallbackImages = document.querySelectorAll('[role="dialog"] img[src*="blob:"], [role="dialog"] img[src*="pbs.twimg.com/media"]');
+    console.log('Fallback search found', fallbackImages.length, 'images');
+    
+    for (const img of fallbackImages) {
+      if (!img.src.includes('emoji') && 
+          !img.src.includes('profile_images') &&
+          !content.media.some(m => m.url === img.src)) {
+        console.log('Processing fallback image:', img.src.substring(0, 50));
+        let mediaData = {
+          type: 'image',
+          url: img.src,
+          alt: img.alt || ''
+        };
+        
+        if (img.src.startsWith('blob:')) {
+          const base64 = await blobToBase64(img.src);
+          if (base64) {
+            mediaData.base64 = base64;
+            console.log('Converted fallback blob URL to base64');
+          }
+        }
+        
+        content.media.push(mediaData);
+      }
+    }
   }
   
   console.log('Final extracted compose content:', content);
+  console.log('Final media count:', content.media.length);
+  if (content.media.length > 0) {
+    console.log('Media URLs:', content.media.map(m => m.url.substring(0, 50)));
+  }
   return content;
 }
 
@@ -778,6 +851,8 @@ async function handleDualPost(content, originalPostButton) {
     
     console.log('Sending to background script - text:', content.text);
     console.log('Sending to background script - has line breaks:', content.text.includes('\n'));
+    console.log('Sending to background script - media count:', content.media ? content.media.length : 0);
+    console.log('Sending to background script - media:', content.media);
     
     let blueskyResponse;
     try {
