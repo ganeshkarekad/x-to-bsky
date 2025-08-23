@@ -607,37 +607,15 @@ async function uploadMedia(mediaItem) {
   
   let blob;
   
-  // Handle base64 data URLs differently
-  if (typeof mediaItem === 'object' && mediaItem.base64 && mediaItem.base64.startsWith('data:')) {
-    // Convert base64 directly to blob
-    console.log('Converting base64 to blob for upload');
-    const response = await fetch(mediaItem.base64);
-    blob = await response.blob();
-    console.log('Using base64 media for upload, size:', blob.size, 'type:', blob.type);
-  } else {
-    // Fetch from URL
-    console.log('Fetching media from URL:', mediaUrl);
-    try {
-      const imageResponse = await fetch(mediaUrl);
-      if (!imageResponse.ok) {
-        console.error('Failed to fetch media, status:', imageResponse.status);
-        throw new Error(`Failed to fetch media: ${imageResponse.status}`);
-      }
-      blob = await imageResponse.blob();
-      console.log('Fetched media blob, size:', blob.size, 'type:', blob.type);
-    } catch (fetchError) {
-      console.error('Error fetching media:', fetchError);
-      // If regular fetch fails and we have base64, try that
-      if (typeof mediaItem === 'object' && mediaItem.base64) {
-        console.log('Regular fetch failed, trying base64 fallback');
-        const response = await fetch(mediaItem.base64);
-        blob = await response.blob();
-        console.log('Using base64 fallback, size:', blob.size, 'type:', blob.type);
-      } else {
-        throw fetchError;
-      }
-    }
+  // Fetch from URL
+  console.log('Fetching media from URL:', mediaUrl);
+  const imageResponse = await fetch(mediaUrl);
+  if (!imageResponse.ok) {
+    console.error('Failed to fetch media, status:', imageResponse.status);
+    throw new Error(`Failed to fetch media: ${imageResponse.status}`);
   }
+  blob = await imageResponse.blob();
+  console.log('Fetched media blob, size:', blob.size, 'type:', blob.type);
   
   const response = await fetch(`${BLUESKY_API_URL}/com.atproto.repo.uploadBlob`, {
     method: 'POST',

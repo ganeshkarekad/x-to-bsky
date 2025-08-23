@@ -355,7 +355,7 @@ function addDualPostButton(toolbar, originalPostButton) {
       }
       
       // Check if this is a thread
-      const threadContent = await extractThreadContent(toolbar);
+      const threadContent = extractThreadContent(toolbar);
       console.log('Thread detection result:', threadContent);
       
       if (threadContent && threadContent.length > 1) {
@@ -363,7 +363,7 @@ function addDualPostButton(toolbar, originalPostButton) {
         await handleThreadDualPost(threadContent, originalPostButton);
       } else {
         console.log('Not a thread, extracting single post content');
-        const composeContent = await extractComposeContent(toolbar);
+        const composeContent = extractComposeContent(toolbar);
         console.log('Extracted content for dual post:', composeContent);
         
         if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
@@ -385,65 +385,8 @@ function addDualPostButton(toolbar, originalPostButton) {
   }
 }
 
-// Helper function to convert blob URL or image element to base64
-async function blobToBase64(blobUrl) {
-  try {
-    console.log('Attempting to convert blob URL to base64:', blobUrl);
-    const response = await fetch(blobUrl);
-    const blob = await response.blob();
-    console.log('Blob fetched, size:', blob.size, 'type:', blob.type);
-    
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        console.log('Successfully converted to base64, length:', reader.result.length);
-        resolve(reader.result);
-      };
-      reader.onerror = (error) => {
-        console.error('FileReader error:', error);
-        reject(error);
-      };
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Failed to convert blob to base64:', error);
-    console.error('Error details:', error.message);
-    return null;
-  }
-}
 
-// Alternative: Convert image element directly to base64 using canvas
-async function imageToBase64(imgElement) {
-  try {
-    console.log('Converting image element to base64 using canvas');
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Wait for image to load if needed
-    if (!imgElement.complete) {
-      await new Promise((resolve) => {
-        imgElement.onload = resolve;
-        imgElement.onerror = () => {
-          console.error('Image failed to load');
-          resolve();
-        };
-      });
-    }
-    
-    canvas.width = imgElement.naturalWidth;
-    canvas.height = imgElement.naturalHeight;
-    ctx.drawImage(imgElement, 0, 0);
-    
-    const dataUrl = canvas.toDataURL('image/png');
-    console.log('Canvas conversion successful, length:', dataUrl.length);
-    return dataUrl;
-  } catch (error) {
-    console.error('Failed to convert image using canvas:', error);
-    return null;
-  }
-}
-
-async function extractComposeContent(toolbar) {
+function extractComposeContent(toolbar) {
   const content = {
     text: '',
     media: []
@@ -593,37 +536,11 @@ async function extractComposeContent(toolbar) {
       for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
           console.log('Processing image from container:', media.src.substring(0, 50));
-          
-          // Check for alternative URLs
-          const actualUrl = media.getAttribute('data-src') || media.getAttribute('data-image') || media.src;
-          console.log('Using URL:', actualUrl.substring(0, 50));
-          
-          let mediaData = {
+          content.media.push({
             type: 'image',
-            url: actualUrl,
+            url: media.src,
             alt: media.alt || ''
-          };
-          
-          // Convert blob URLs to base64
-          if (actualUrl.startsWith('blob:')) {
-            // Try blob fetch first
-            let base64 = await blobToBase64(actualUrl);
-            
-            // If blob fetch fails, try canvas method
-            if (!base64) {
-              console.log('Blob fetch failed, trying canvas method');
-              base64 = await imageToBase64(media);
-            }
-            
-            if (base64) {
-              mediaData.base64 = base64;
-              console.log('Successfully converted blob URL to base64');
-            } else {
-              console.error('Failed to convert blob URL with both methods');
-            }
-          }
-          
-          content.media.push(mediaData);
+          });
         } else if (media.tagName === 'VIDEO') {
           console.log('Processing video from container');
           content.media.push({
@@ -645,36 +562,14 @@ async function extractComposeContent(toolbar) {
     for (const img of directImages) {
       // Skip profile images, emojis, and already processed images
       if (!img.src.includes('emoji') && 
-          !img.src.includes('profile_images') && 
-          !img.src.includes('emoji') &&
+          !img.src.includes('profile_images') &&
           !content.media.some(m => m.url === img.src)) {
         console.log('Processing direct image:', img.src.substring(0, 50));
-        let mediaData = {
+        content.media.push({
           type: 'image',
           url: img.src,
           alt: img.alt || ''
-        };
-        
-        // Convert blob URLs to base64
-        if (img.src.startsWith('blob:')) {
-          // Try blob fetch first
-          let base64 = await blobToBase64(img.src);
-          
-          // If blob fetch fails, try canvas method
-          if (!base64) {
-            console.log('Blob fetch failed for direct image, trying canvas method');
-            base64 = await imageToBase64(img);
-          }
-          
-          if (base64) {
-            mediaData.base64 = base64;
-            console.log('Converted blob URL to base64 for direct image');
-          } else {
-            console.error('Failed to convert direct image blob URL');
-          }
-        }
-        
-        content.media.push(mediaData);
+        });
       }
     }
   } else {
@@ -688,31 +583,11 @@ async function extractComposeContent(toolbar) {
           !img.src.includes('profile_images') &&
           !content.media.some(m => m.url === img.src)) {
         console.log('Processing fallback image:', img.src.substring(0, 50));
-        let mediaData = {
+        content.media.push({
           type: 'image',
           url: img.src,
           alt: img.alt || ''
-        };
-        
-        if (img.src.startsWith('blob:')) {
-          // Try blob fetch first
-          let base64 = await blobToBase64(img.src);
-          
-          // If blob fetch fails, try canvas method
-          if (!base64) {
-            console.log('Blob fetch failed for fallback image, trying canvas method');
-            base64 = await imageToBase64(img);
-          }
-          
-          if (base64) {
-            mediaData.base64 = base64;
-            console.log('Converted fallback blob URL to base64');
-          } else {
-            console.error('Failed to convert fallback blob URL');
-          }
-        }
-        
-        content.media.push(mediaData);
+        });
       }
     }
   }
@@ -722,12 +597,11 @@ async function extractComposeContent(toolbar) {
   console.log('Final media count:', content.media.length);
   if (content.media.length > 0) {
     console.log('Media URLs:', content.media.map(m => m.url.substring(0, 50)));
-    console.log('Media with base64:', content.media.filter(m => m.base64).length);
   }
   return content;
 }
 
-async function extractThreadContent(toolbar) {
+function extractThreadContent(toolbar) {
   // Look for thread indicators
   const composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]') || 
                            toolbar.closest('[data-testid="toolBar"]')?.parentNode;
@@ -822,32 +696,11 @@ async function extractThreadContent(toolbar) {
       const mediaElements = mediaContainer.querySelectorAll('img, video');
       for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
-          let mediaData = {
+          content.media.push({
             type: 'image',
             url: media.src,
             alt: media.alt || ''
-          };
-          
-          // Convert blob URLs to base64
-          if (media.src.startsWith('blob:')) {
-            // Try blob fetch first
-            let base64 = await blobToBase64(media.src);
-            
-            // If blob fetch fails, try canvas method
-            if (!base64) {
-              console.log('Blob fetch failed for thread image, trying canvas method');
-              base64 = await imageToBase64(media);
-            }
-            
-            if (base64) {
-              mediaData.base64 = base64;
-              console.log('Converted thread blob URL to base64 for image');
-            } else {
-              console.error('Failed to convert thread blob URL');
-            }
-          }
-          
-          content.media.push(mediaData);
+          });
         } else if (media.tagName === 'VIDEO') {
           content.media.push({
             type: 'video',
@@ -988,7 +841,7 @@ async function handleDualPost(content, originalPostButton) {
   }
 }
 
-async function extractTweetContent(tweetElement) {
+function extractTweetContent(tweetElement) {
   console.log('Extracting content from tweet:', tweetElement);
   
   const content = {
@@ -1070,22 +923,11 @@ async function extractTweetContent(tweetElement) {
   const imageElements = tweetElement.querySelectorAll('img[src*="pbs.twimg.com/media"], [data-testid="tweetPhoto"] img, img[alt="Image"]');
   for (const img of imageElements) {
     if (img.src && !img.src.includes('profile_images') && !content.media.some(m => m.url === img.src)) {
-      let mediaData = {
+      content.media.push({
         type: 'image',
         url: img.src,
         alt: img.alt || ''
-      };
-      
-      // Convert blob URLs to base64 (though tweet content usually has regular URLs)
-      if (img.src.startsWith('blob:')) {
-        const base64 = await blobToBase64(img.src);
-        if (base64) {
-          mediaData.base64 = base64;
-          console.log('Converted tweet blob URL to base64 for image');
-        }
-      }
-      
-      content.media.push(mediaData);
+      });
       console.log('Found image:', img.src);
     }
   }
@@ -1123,22 +965,11 @@ async function extractTweetContent(tweetElement) {
   const gifElements = tweetElement.querySelectorAll('img[src*=".gif"], img[src*="tweet_gif"], [data-testid="gif"]');
   for (const gif of gifElements) {
     if (gif.src && !content.media.some(m => m.url === gif.src)) {
-      let mediaData = {
+      content.media.push({
         type: 'gif',
         url: gif.src,
         alt: gif.alt || 'GIF'
-      };
-      
-      // Convert blob URLs to base64 if needed
-      if (gif.src.startsWith('blob:')) {
-        const base64 = await blobToBase64(gif.src);
-        if (base64) {
-          mediaData.base64 = base64;
-          console.log('Converted GIF blob URL to base64');
-        }
-      }
-      
-      content.media.push(mediaData);
+      });
       console.log('Found GIF:', gif.src);
     }
   }
@@ -1185,7 +1016,7 @@ async function handleRepostToBluesky(tweetElement) {
     return;
   }
 
-  const content = await extractTweetContent(tweetElement);
+  const content = extractTweetContent(tweetElement);
   
   if (!content.text && (!content.media || content.media.length === 0)) {
     showNotification('Could not extract tweet content', 'error');
