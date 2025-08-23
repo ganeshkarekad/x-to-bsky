@@ -399,38 +399,64 @@ function extractComposeContent(toolbar) {
   };
   
   // Try multiple strategies to find the compose text area
-  // The toolbar itself is not the container - we need to go up further
+  // We need to find ONLY the compose area, not the entire timeline
   console.log('Strategy 1: Looking for dialog container');
   // Strategy 1: Look for the modal/dialog that contains everything
   let composeContainer = toolbar.closest('[role="dialog"]');
   console.log('Strategy 1 result:', !!composeContainer);
   
-  // Strategy 2: Look for the primary column container
+  // Strategy 2: Find the smallest container that has both toolbar and textarea
   if (!composeContainer) {
-    console.log('Strategy 2: Looking for primary column');
-    composeContainer = toolbar.closest('[data-testid="primaryColumn"]');
+    console.log('Strategy 2: Finding smallest container with text area and toolbar');
+    let parent = toolbar.parentElement;
+    let smallestContainer = null;
+    
+    while (parent && parent !== document.body) {
+      // Check if this parent has the text area
+      if (parent.querySelector('[data-testid="tweetTextarea_0"]')) {
+        smallestContainer = parent;
+        // Keep going to find the smallest one
+        if (!parent.querySelector('[aria-label="Home timeline"]') && 
+            !parent.querySelector('[data-testid="primaryColumn"]')) {
+          // This is likely the compose box, not the whole timeline
+          composeContainer = parent;
+          break;
+        }
+      }
+      parent = parent.parentElement;
+    }
+    
+    // If we didn't find a good small container, use the smallest one we found
+    if (!composeContainer && smallestContainer) {
+      composeContainer = smallestContainer;
+    }
     console.log('Strategy 2 result:', !!composeContainer);
   }
   
-  // Strategy 3: Go up multiple levels from toolbar
+  // Strategy 3: Look for specific compose box containers
   if (!composeContainer) {
-    console.log('Strategy 3: Looking up multiple parent levels');
-    // Go up the tree until we find a container with the text area
-    let parent = toolbar.parentElement;
-    while (parent && !parent.querySelector('[data-testid="tweetTextarea_0"]')) {
-      parent = parent.parentElement;
-      if (parent?.querySelector('[data-testid="tweetTextarea_0"]')) {
-        composeContainer = parent;
+    console.log('Strategy 3: Looking for compose box specific containers');
+    // Look for the compose box that's a sibling or ancestor of the toolbar
+    const possibleContainers = [
+      toolbar.closest('[data-testid="tweetComposer"]'),
+      toolbar.closest('[data-testid="tweet-compose"]'),
+      toolbar.closest('[role="group"]'),
+      toolbar.closest('form')
+    ];
+    
+    for (const container of possibleContainers) {
+      if (container && container.querySelector('[data-testid="tweetTextarea_0"]')) {
+        composeContainer = container;
         break;
       }
     }
     console.log('Strategy 3 result:', !!composeContainer);
   }
   
-  // Strategy 4: Look for the broader compose tweet modal
+  // Strategy 4: Last resort - use primary column but limit scope
   if (!composeContainer) {
-    console.log('Strategy 4: Looking for modal header or tweet composer');
-    composeContainer = toolbar.closest('[aria-labelledby="modal-header"], [data-testid="tweetComposer"]');
+    console.log('Strategy 4: Using primary column with limited scope');
+    composeContainer = toolbar.closest('[data-testid="primaryColumn"]');
     console.log('Strategy 4 result:', !!composeContainer);
   }
   
@@ -595,15 +621,37 @@ function extractComposeContent(toolbar) {
     
     // Also check for images directly in the compose container (Twitter sometimes places them differently)
     console.log('Checking for direct images in compose container');
-    // Expand the selector to catch more image types including pasted images
-    const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com"], img[src*="twimg.com"], img[draggable="true"], img[alt]:not([src*="emoji"])');
-    console.log('Found', directImages.length, 'direct images with expanded selectors');
+    
+    // Only look for images that are likely attached to the compose, not from timeline
+    // First, find the compose box boundaries
+    const textArea = composeContainer.querySelector('[data-testid="tweetTextarea_0"]');
+    const composeBox = textArea?.closest('div[class*="css-"]')?.parentElement?.parentElement;
+    
+    // Look for images near the text area or in attachment areas
+    let directImages = [];
+    
+    if (composeBox) {
+      // Look for images specifically in the compose box area
+      directImages = composeBox.querySelectorAll('img[src*="blob:"], img[draggable="false"]:not([src*="profile_images"])');
+      console.log('Found', directImages.length, 'images in compose box area');
+    }
+    
+    // If no compose box or no images, try broader search but filter carefully
+    if (directImages.length === 0) {
+      const allImages = composeContainer.querySelectorAll('img');
+      directImages = Array.from(allImages).filter(img => {
+        // Only include blob images or images that are not profile/emoji/video thumbnails
+        return (img.src.includes('blob:') || 
+                (img.draggable === false && !img.src.includes('profile_images'))) &&
+               !img.src.includes('emoji') &&
+               !img.src.includes('ext_tw_video_thumb') &&
+               !img.closest('article'); // Exclude images from tweet articles
+      });
+      console.log('Found', directImages.length, 'filtered images');
+    }
     
     for (const img of directImages) {
-      // Skip profile images, emojis, and already processed images
-      if (!img.src.includes('emoji') && 
-          !img.src.includes('profile_images') &&
-          !content.media.some(m => m.url === img.src)) {
+      if (!content.media.some(m => m.url === img.src)) {
         console.log('Processing direct image:', img.src.substring(0, 50));
         content.media.push({
           type: 'image',
