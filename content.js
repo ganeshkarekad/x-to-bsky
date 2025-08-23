@@ -605,7 +605,7 @@ async function extractThreadContent(toolbar) {
   const thread = [];
   
   // Extract content from each tweet in the thread
-  textAreas.forEach((textArea, index) => {
+  for (const textArea of textAreas) {
     const tweetContainer = textArea.closest('[data-testid^="cellInnerDiv"], [data-testid^="tweet-box-"]') || textArea.parentElement;
     
     const content = {
@@ -700,7 +700,7 @@ async function extractThreadContent(toolbar) {
     if (content.text || content.media.length > 0) {
       thread.push(content);
     }
-  });
+  }
   
   return thread.length > 0 ? thread : null;
 }
