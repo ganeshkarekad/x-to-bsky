@@ -432,11 +432,13 @@ async function attemptPost(text, media, retryCount) {
   let warnings = [];
   
   if (media && media.length > 0) {
+    console.log('Processing media for upload, count:', media.length);
     // Filter and process media
     const supportedMedia = [];
     const images = [];
     
     for (const item of media) {
+      console.log('Processing media item:', item);
       if (typeof item === 'string') {
         // Backward compatibility - treat strings as image URLs
         images.push({ url: item, alt: '', type: 'image' });
@@ -453,9 +455,12 @@ async function attemptPost(text, media, retryCount) {
       }
     }
     
+    console.log('Images to upload:', images.length);
     if (images.length > 0) {
       try {
+        console.log('Starting media upload for', images.length, 'images');
         const uploadedImages = await Promise.all(images.slice(0, 4).map(img => uploadMedia(img)));
+        console.log('Successfully uploaded', uploadedImages.length, 'images');
         embed = {
           $type: 'app.bsky.embed.images',
           images: uploadedImages,
@@ -469,7 +474,11 @@ async function attemptPost(text, media, retryCount) {
         warnings.push('Failed to upload some media files.');
         // Continue without media if upload fails
       }
+    } else {
+      console.log('No images to upload after filtering');
     }
+  } else {
+    console.log('No media provided');
   }
 
   const urls = extractUrls(text);
@@ -499,7 +508,12 @@ async function attemptPost(text, media, retryCount) {
 
   if (embed) {
     record.embed = embed;
+    console.log('Adding embed to record with', embed.images ? embed.images.length : 0, 'images');
   }
+  
+  console.log('Final record text:', record.text);
+  console.log('Record has line breaks:', record.text.includes('\n'));
+  console.log('Record has embed:', !!record.embed);
 
   try {
     console.log('Attempting to post with session:', {
@@ -584,24 +598,42 @@ async function attemptPost(text, media, retryCount) {
 }
 
 async function uploadMedia(mediaItem) {
+  console.log('uploadMedia called with:', mediaItem);
   const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.url;
   const alt = typeof mediaItem === 'string' ? '' : (mediaItem.alt || '');
   
   let blob;
   
   // Handle base64 data URLs differently
-  if (mediaItem.base64 && mediaItem.base64.startsWith('data:')) {
+  if (typeof mediaItem === 'object' && mediaItem.base64 && mediaItem.base64.startsWith('data:')) {
     // Convert base64 directly to blob
+    console.log('Converting base64 to blob for upload');
     const response = await fetch(mediaItem.base64);
     blob = await response.blob();
     console.log('Using base64 media for upload, size:', blob.size, 'type:', blob.type);
   } else {
     // Fetch from URL
-    const imageResponse = await fetch(mediaUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to fetch media: ${imageResponse.status}`);
+    console.log('Fetching media from URL:', mediaUrl);
+    try {
+      const imageResponse = await fetch(mediaUrl);
+      if (!imageResponse.ok) {
+        console.error('Failed to fetch media, status:', imageResponse.status);
+        throw new Error(`Failed to fetch media: ${imageResponse.status}`);
+      }
+      blob = await imageResponse.blob();
+      console.log('Fetched media blob, size:', blob.size, 'type:', blob.type);
+    } catch (fetchError) {
+      console.error('Error fetching media:', fetchError);
+      // If regular fetch fails and we have base64, try that
+      if (typeof mediaItem === 'object' && mediaItem.base64) {
+        console.log('Regular fetch failed, trying base64 fallback');
+        const response = await fetch(mediaItem.base64);
+        blob = await response.blob();
+        console.log('Using base64 fallback, size:', blob.size, 'type:', blob.type);
+      } else {
+        throw fetchError;
+      }
     }
-    blob = await imageResponse.blob();
   }
   
   const response = await fetch(`${BLUESKY_API_URL}/com.atproto.repo.uploadBlob`, {

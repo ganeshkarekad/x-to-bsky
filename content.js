@@ -306,7 +306,7 @@ function addDualPostButton(toolbar, originalPostButton) {
     }
     
     // Check if this is a thread
-    const threadContent = extractThreadContent(toolbar);
+    const threadContent = await extractThreadContent(toolbar);
     console.log('Thread detection result:', threadContent);
     
     if (threadContent && threadContent.length > 1) {
@@ -314,7 +314,7 @@ function addDualPostButton(toolbar, originalPostButton) {
       await handleThreadDualPost(threadContent, originalPostButton);
     } else {
       console.log('Not a thread, extracting single post content');
-      const composeContent = extractComposeContent(toolbar);
+      const composeContent = await extractComposeContent(toolbar);
       console.log('Extracted content for dual post:', composeContent);
       
       if (!composeContent.text && (!composeContent.media || composeContent.media.length === 0)) {
@@ -333,7 +333,24 @@ function addDualPostButton(toolbar, originalPostButton) {
   console.log('Added dual post button to compose area');
 }
 
-function extractComposeContent(toolbar) {
+// Helper function to convert blob URL to base64
+async function blobToBase64(blobUrl) {
+  try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Failed to convert blob to base64:', error);
+    return null;
+  }
+}
+
+async function extractComposeContent(toolbar) {
   const content = {
     text: '',
     media: []
@@ -451,13 +468,24 @@ function extractComposeContent(toolbar) {
     
     if (mediaContainer) {
       const mediaElements = mediaContainer.querySelectorAll('img, video');
-      mediaElements.forEach(media => {
+      for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
-          content.media.push({
+          let mediaData = {
             type: 'image',
             url: media.src,
             alt: media.alt || ''
-          });
+          };
+          
+          // Convert blob URLs to base64
+          if (media.src.startsWith('blob:')) {
+            const base64 = await blobToBase64(media.src);
+            if (base64) {
+              mediaData.base64 = base64;
+              console.log('Converted blob URL to base64 for image');
+            }
+          }
+          
+          content.media.push(mediaData);
         } else if (media.tagName === 'VIDEO') {
           content.media.push({
             type: 'video',
@@ -465,27 +493,38 @@ function extractComposeContent(toolbar) {
             alt: 'Video'
           });
         }
-      });
+      }
     }
     
     // Also check for images directly in the compose container (Twitter sometimes places them differently)
     const directImages = composeContainer.querySelectorAll('img[src*="blob:"], img[src*="pbs.twimg.com/media"]');
-    directImages.forEach(img => {
+    for (const img of directImages) {
       if (!img.src.includes('emoji') && !content.media.some(m => m.url === img.src)) {
-        content.media.push({
+        let mediaData = {
           type: 'image',
           url: img.src,
           alt: img.alt || ''
-        });
+        };
+        
+        // Convert blob URLs to base64
+        if (img.src.startsWith('blob:')) {
+          const base64 = await blobToBase64(img.src);
+          if (base64) {
+            mediaData.base64 = base64;
+            console.log('Converted blob URL to base64 for direct image');
+          }
+        }
+        
+        content.media.push(mediaData);
       }
-    });
+    }
   }
   
   console.log('Final extracted compose content:', content);
   return content;
 }
 
-function extractThreadContent(toolbar) {
+async function extractThreadContent(toolbar) {
   // Look for thread indicators
   const composeContainer = toolbar.closest('[role="dialog"], [data-testid="primaryColumn"]') || 
                            toolbar.closest('[data-testid="toolBar"]')?.parentNode;
@@ -578,13 +617,24 @@ function extractThreadContent(toolbar) {
     const mediaContainer = tweetContainer?.querySelector('[data-testid="attachments"], [class*="attach"]');
     if (mediaContainer) {
       const mediaElements = mediaContainer.querySelectorAll('img, video');
-      mediaElements.forEach(media => {
+      for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
-          content.media.push({
+          let mediaData = {
             type: 'image',
             url: media.src,
             alt: media.alt || ''
-          });
+          };
+          
+          // Convert blob URLs to base64
+          if (media.src.startsWith('blob:')) {
+            const base64 = await blobToBase64(media.src);
+            if (base64) {
+              mediaData.base64 = base64;
+              console.log('Converted thread blob URL to base64 for image');
+            }
+          }
+          
+          content.media.push(mediaData);
         } else if (media.tagName === 'VIDEO') {
           content.media.push({
             type: 'video',
@@ -592,7 +642,7 @@ function extractThreadContent(toolbar) {
             alt: 'Video'
           });
         }
-      });
+      }
     }
     
     if (content.text || content.media.length > 0) {
@@ -723,7 +773,7 @@ async function handleDualPost(content, originalPostButton) {
   }
 }
 
-function extractTweetContent(tweetElement) {
+async function extractTweetContent(tweetElement) {
   console.log('Extracting content from tweet:', tweetElement);
   
   const content = {
@@ -803,16 +853,27 @@ function extractTweetContent(tweetElement) {
   
   // Look for images
   const imageElements = tweetElement.querySelectorAll('img[src*="pbs.twimg.com/media"], [data-testid="tweetPhoto"] img, img[alt="Image"]');
-  imageElements.forEach(img => {
+  for (const img of imageElements) {
     if (img.src && !img.src.includes('profile_images') && !content.media.some(m => m.url === img.src)) {
-      content.media.push({
+      let mediaData = {
         type: 'image',
         url: img.src,
         alt: img.alt || ''
-      });
+      };
+      
+      // Convert blob URLs to base64 (though tweet content usually has regular URLs)
+      if (img.src.startsWith('blob:')) {
+        const base64 = await blobToBase64(img.src);
+        if (base64) {
+          mediaData.base64 = base64;
+          console.log('Converted tweet blob URL to base64 for image');
+        }
+      }
+      
+      content.media.push(mediaData);
       console.log('Found image:', img.src);
     }
-  });
+  }
   
   // Look for GIFs and videos
   const videoElements = tweetElement.querySelectorAll('video, [data-testid="videoPlayer"] video');
@@ -845,16 +906,27 @@ function extractTweetContent(tweetElement) {
   
   // Look for GIFs (often displayed as images with specific patterns)
   const gifElements = tweetElement.querySelectorAll('img[src*=".gif"], img[src*="tweet_gif"], [data-testid="gif"]');
-  gifElements.forEach(gif => {
+  for (const gif of gifElements) {
     if (gif.src && !content.media.some(m => m.url === gif.src)) {
-      content.media.push({
+      let mediaData = {
         type: 'gif',
         url: gif.src,
         alt: gif.alt || 'GIF'
-      });
+      };
+      
+      // Convert blob URLs to base64 if needed
+      if (gif.src.startsWith('blob:')) {
+        const base64 = await blobToBase64(gif.src);
+        if (base64) {
+          mediaData.base64 = base64;
+          console.log('Converted GIF blob URL to base64');
+        }
+      }
+      
+      content.media.push(mediaData);
       console.log('Found GIF:', gif.src);
     }
-  });
+  }
   
   // Keep backward compatibility
   content.images = content.media.filter(m => m.type === 'image').map(m => m.url);
@@ -898,7 +970,7 @@ async function handleRepostToBluesky(tweetElement) {
     return;
   }
 
-  const content = extractTweetContent(tweetElement);
+  const content = await extractTweetContent(tweetElement);
   
   if (!content.text && (!content.media || content.media.length === 0)) {
     showNotification('Could not extract tweet content', 'error');
