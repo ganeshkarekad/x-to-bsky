@@ -415,6 +415,11 @@ async function postToBluesky(text, media = []) {
     throw new Error('Invalid session - please log in again');
   }
 
+  // Log the text to verify line breaks are present
+  console.log('Posting text to Bluesky:', text);
+  console.log('Text contains line breaks:', text.includes('\n'));
+  console.log('Line break positions:', [...text].map((c, i) => c === '\n' ? i : null).filter(x => x !== null));
+
   return await attemptPost(text, media, 0);
 }
 
@@ -482,11 +487,14 @@ async function attemptPost(text, media, retryCount) {
     }
   }
 
+  // Ensure text preserves line breaks
+  const processedText = text ? text : '';
+  
   const record = {
     $type: 'app.bsky.feed.post',
-    text: text,
+    text: processedText,
     createdAt: new Date().toISOString(),
-    facets: parseMentionsAndLinks(text),
+    facets: parseMentionsAndLinks(processedText),
   };
 
   if (embed) {
@@ -795,11 +803,14 @@ async function postBlueskyThread(thread) {
         }
       }
 
+      // Ensure text preserves line breaks
+      const processedText = post.text ? post.text : '';
+      
       const record = {
         $type: 'app.bsky.feed.post',
-        text: post.text,
+        text: processedText,
         createdAt: new Date().toISOString(),
-        facets: parseMentionsAndLinks(post.text),
+        facets: parseMentionsAndLinks(processedText),
       };
 
       if (embed) {

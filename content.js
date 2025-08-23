@@ -376,43 +376,60 @@ function extractComposeContent(toolbar) {
   }
   
   if (textArea) {
-    // First try to get text directly
-    let fullText = textArea.textContent || textArea.innerText || '';
-    
-    // If that's empty or too short, use the tree walker method
-    if (fullText.length < 2) {
-      fullText = '';
-      const walker = document.createTreeWalker(
-        textArea,
-        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-        {
-          acceptNode: function(node) {
-            if (node.nodeType === Node.TEXT_NODE) {
+    // Use a more sophisticated extraction that preserves line breaks
+    let fullText = '';
+    const walker = document.createTreeWalker(
+      textArea,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: function(node) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            // Accept BR tags for line breaks
+            if (node.tagName === 'BR') {
               return NodeFilter.FILTER_ACCEPT;
             }
-            if (node.nodeType === Node.ELEMENT_NODE && 
-                node.tagName === 'IMG' && 
+            // Accept DIV tags (they represent line breaks in Twitter's editor)
+            if (node.tagName === 'DIV') {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            // Accept IMG tags for emojis
+            if (node.tagName === 'IMG' && 
                 (node.hasAttribute('alt') || node.src.includes('emoji'))) {
               return NodeFilter.FILTER_ACCEPT;
             }
-            return NodeFilter.FILTER_SKIP;
           }
+          return NodeFilter.FILTER_SKIP;
         }
-      );
-      
-      let node;
-      while (node = walker.nextNode()) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          fullText += node.textContent;
-        } else if (node.tagName === 'IMG' && node.alt) {
-          fullText += node.alt;
+      }
+    );
+    
+    let node;
+    let isFirstDiv = true;
+    while (node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        fullText += node.textContent;
+      } else if (node.tagName === 'IMG' && node.alt) {
+        fullText += node.alt;
+      } else if (node.tagName === 'BR') {
+        fullText += '\n';
+      } else if (node.tagName === 'DIV') {
+        // DIVs in Twitter's editor represent line breaks
+        // But we need to be careful not to add extra line breaks
+        if (!isFirstDiv && fullText.length > 0 && !fullText.endsWith('\n')) {
+          fullText += '\n';
         }
+        isFirstDiv = false;
       }
     }
     
-    // Clean up the text - preserve linebreaks
+    // Clean up the text - preserve linebreaks but trim excessive ones
     content.text = fullText.trim();
     console.log('Extracted text:', content.text);
+    console.log('Text contains line breaks:', content.text.includes('\n'));
+    console.log('Text as JSON:', JSON.stringify(content.text));
   } else {
     console.warn('Could not find text area in compose interface');
   }
@@ -505,40 +522,57 @@ function extractThreadContent(toolbar) {
       media: []
     };
     
-    // Extract text
-    let fullText = textArea.textContent || textArea.innerText || '';
-    
-    if (fullText.length < 2) {
-      fullText = '';
-      const walker = document.createTreeWalker(
-        textArea,
-        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-        {
-          acceptNode: function(node) {
-            if (node.nodeType === Node.TEXT_NODE) {
+    // Extract text with line breaks preserved
+    let fullText = '';
+    const walker = document.createTreeWalker(
+      textArea,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: function(node) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            // Accept BR tags for line breaks
+            if (node.tagName === 'BR') {
               return NodeFilter.FILTER_ACCEPT;
             }
-            if (node.nodeType === Node.ELEMENT_NODE && 
-                node.tagName === 'IMG' && 
+            // Accept DIV tags (they represent line breaks in Twitter's editor)
+            if (node.tagName === 'DIV') {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            // Accept IMG tags for emojis
+            if (node.tagName === 'IMG' && 
                 (node.hasAttribute('alt') || node.src.includes('emoji'))) {
               return NodeFilter.FILTER_ACCEPT;
             }
-            return NodeFilter.FILTER_SKIP;
           }
+          return NodeFilter.FILTER_SKIP;
         }
-      );
-      
-      let node;
-      while (node = walker.nextNode()) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          fullText += node.textContent;
-        } else if (node.tagName === 'IMG' && node.alt) {
-          fullText += node.alt;
+      }
+    );
+    
+    let node;
+    let isFirstDiv = true;
+    while (node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        fullText += node.textContent;
+      } else if (node.tagName === 'IMG' && node.alt) {
+        fullText += node.alt;
+      } else if (node.tagName === 'BR') {
+        fullText += '\n';
+      } else if (node.tagName === 'DIV') {
+        // DIVs in Twitter's editor represent line breaks
+        if (!isFirstDiv && fullText.length > 0 && !fullText.endsWith('\n')) {
+          fullText += '\n';
         }
+        isFirstDiv = false;
       }
     }
     
     content.text = fullText.trim();
+    console.log('Thread item text:', content.text);
+    console.log('Thread text contains line breaks:', content.text.includes('\n'));
     
     // Look for media in this specific tweet
     const mediaContainer = tweetContainer?.querySelector('[data-testid="attachments"], [class*="attach"]');
@@ -640,6 +674,9 @@ async function handleDualPost(content, originalPostButton) {
     // Step 1: Post to Bluesky first
     showNotification('Posting to Bluesky...', 'info');
     
+    console.log('Sending to background script - text:', content.text);
+    console.log('Sending to background script - has line breaks:', content.text.includes('\n'));
+    
     let blueskyResponse;
     try {
       blueskyResponse = await chrome.runtime.sendMessage({
@@ -696,10 +733,10 @@ function extractTweetContent(tweetElement) {
     timestamp: ''
   };
 
-  // Extract text content with proper emoji handling
+  // Extract text content with proper emoji and line break handling
   const textElement = tweetElement.querySelector('[data-testid="tweetText"]');
   if (textElement) {
-    // Get all text nodes including emojis
+    // Get all text nodes including emojis and preserve line breaks
     let fullText = '';
     const walker = document.createTreeWalker(
       textElement,
@@ -709,11 +746,24 @@ function extractTweetContent(tweetElement) {
           if (node.nodeType === Node.TEXT_NODE) {
             return NodeFilter.FILTER_ACCEPT;
           }
-          // Also accept img elements that are emojis
-          if (node.nodeType === Node.ELEMENT_NODE && 
-              node.tagName === 'IMG' && 
-              (node.hasAttribute('alt') || node.src.includes('emoji'))) {
-            return NodeFilter.FILTER_ACCEPT;
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            // Accept BR tags for line breaks
+            if (node.tagName === 'BR') {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+            // Accept DIV/SPAN tags that might represent line breaks
+            if (node.tagName === 'DIV' || node.tagName === 'SPAN') {
+              // Check if this is a block-level element that should create a line break
+              const display = window.getComputedStyle(node).display;
+              if (display === 'block' || display === 'flex') {
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            }
+            // Accept img elements that are emojis
+            if (node.tagName === 'IMG' && 
+                (node.hasAttribute('alt') || node.src.includes('emoji'))) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
           }
           return NodeFilter.FILTER_SKIP;
         }
@@ -721,17 +771,31 @@ function extractTweetContent(tweetElement) {
     );
     
     let node;
+    let lastWasBlock = false;
     while (node = walker.nextNode()) {
       if (node.nodeType === Node.TEXT_NODE) {
         fullText += node.textContent;
+        lastWasBlock = false;
       } else if (node.tagName === 'IMG' && node.alt) {
         // Add emoji from alt text
         fullText += node.alt;
+        lastWasBlock = false;
+      } else if (node.tagName === 'BR') {
+        fullText += '\n';
+        lastWasBlock = true;
+      } else if (node.tagName === 'DIV' || node.tagName === 'SPAN') {
+        // Add line break for block elements if needed
+        if (!lastWasBlock && fullText.length > 0 && !fullText.endsWith('\n')) {
+          fullText += '\n';
+        }
+        lastWasBlock = true;
       }
     }
     
     content.text = fullText.trim();
-    console.log('Extracted text with emojis:', content.text);
+    console.log('Extracted text with emojis and line breaks:', content.text);
+    console.log('Tweet text contains line breaks:', content.text.includes('\n'));
+    console.log('Tweet text as JSON:', JSON.stringify(content.text));
   }
 
   // Extract media (images, GIFs, videos)
