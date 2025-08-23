@@ -385,19 +385,60 @@ function addDualPostButton(toolbar, originalPostButton) {
   }
 }
 
-// Helper function to convert blob URL to base64
+// Helper function to convert blob URL or image element to base64
 async function blobToBase64(blobUrl) {
   try {
+    console.log('Attempting to convert blob URL to base64:', blobUrl);
     const response = await fetch(blobUrl);
     const blob = await response.blob();
+    console.log('Blob fetched, size:', blob.size, 'type:', blob.type);
+    
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
+      reader.onloadend = () => {
+        console.log('Successfully converted to base64, length:', reader.result.length);
+        resolve(reader.result);
+      };
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        reject(error);
+      };
       reader.readAsDataURL(blob);
     });
   } catch (error) {
     console.error('Failed to convert blob to base64:', error);
+    console.error('Error details:', error.message);
+    return null;
+  }
+}
+
+// Alternative: Convert image element directly to base64 using canvas
+async function imageToBase64(imgElement) {
+  try {
+    console.log('Converting image element to base64 using canvas');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Wait for image to load if needed
+    if (!imgElement.complete) {
+      await new Promise((resolve) => {
+        imgElement.onload = resolve;
+        imgElement.onerror = () => {
+          console.error('Image failed to load');
+          resolve();
+        };
+      });
+    }
+    
+    canvas.width = imgElement.naturalWidth;
+    canvas.height = imgElement.naturalHeight;
+    ctx.drawImage(imgElement, 0, 0);
+    
+    const dataUrl = canvas.toDataURL('image/png');
+    console.log('Canvas conversion successful, length:', dataUrl.length);
+    return dataUrl;
+  } catch (error) {
+    console.error('Failed to convert image using canvas:', error);
     return null;
   }
 }
@@ -552,18 +593,33 @@ async function extractComposeContent(toolbar) {
       for (const media of mediaElements) {
         if (media.tagName === 'IMG' && media.src && !media.src.includes('emoji')) {
           console.log('Processing image from container:', media.src.substring(0, 50));
+          
+          // Check for alternative URLs
+          const actualUrl = media.getAttribute('data-src') || media.getAttribute('data-image') || media.src;
+          console.log('Using URL:', actualUrl.substring(0, 50));
+          
           let mediaData = {
             type: 'image',
-            url: media.src,
+            url: actualUrl,
             alt: media.alt || ''
           };
           
           // Convert blob URLs to base64
-          if (media.src.startsWith('blob:')) {
-            const base64 = await blobToBase64(media.src);
+          if (actualUrl.startsWith('blob:')) {
+            // Try blob fetch first
+            let base64 = await blobToBase64(actualUrl);
+            
+            // If blob fetch fails, try canvas method
+            if (!base64) {
+              console.log('Blob fetch failed, trying canvas method');
+              base64 = await imageToBase64(media);
+            }
+            
             if (base64) {
               mediaData.base64 = base64;
-              console.log('Converted blob URL to base64 for image');
+              console.log('Successfully converted blob URL to base64');
+            } else {
+              console.error('Failed to convert blob URL with both methods');
             }
           }
           
@@ -601,10 +657,20 @@ async function extractComposeContent(toolbar) {
         
         // Convert blob URLs to base64
         if (img.src.startsWith('blob:')) {
-          const base64 = await blobToBase64(img.src);
+          // Try blob fetch first
+          let base64 = await blobToBase64(img.src);
+          
+          // If blob fetch fails, try canvas method
+          if (!base64) {
+            console.log('Blob fetch failed for direct image, trying canvas method');
+            base64 = await imageToBase64(img);
+          }
+          
           if (base64) {
             mediaData.base64 = base64;
             console.log('Converted blob URL to base64 for direct image');
+          } else {
+            console.error('Failed to convert direct image blob URL');
           }
         }
         
@@ -629,10 +695,20 @@ async function extractComposeContent(toolbar) {
         };
         
         if (img.src.startsWith('blob:')) {
-          const base64 = await blobToBase64(img.src);
+          // Try blob fetch first
+          let base64 = await blobToBase64(img.src);
+          
+          // If blob fetch fails, try canvas method
+          if (!base64) {
+            console.log('Blob fetch failed for fallback image, trying canvas method');
+            base64 = await imageToBase64(img);
+          }
+          
           if (base64) {
             mediaData.base64 = base64;
             console.log('Converted fallback blob URL to base64');
+          } else {
+            console.error('Failed to convert fallback blob URL');
           }
         }
         
@@ -642,9 +718,11 @@ async function extractComposeContent(toolbar) {
   }
   
   console.log('Final extracted compose content:', content);
+  console.log('Final text has line breaks:', content.text.includes('\n'));
   console.log('Final media count:', content.media.length);
   if (content.media.length > 0) {
     console.log('Media URLs:', content.media.map(m => m.url.substring(0, 50)));
+    console.log('Media with base64:', content.media.filter(m => m.base64).length);
   }
   return content;
 }
@@ -752,10 +830,20 @@ async function extractThreadContent(toolbar) {
           
           // Convert blob URLs to base64
           if (media.src.startsWith('blob:')) {
-            const base64 = await blobToBase64(media.src);
+            // Try blob fetch first
+            let base64 = await blobToBase64(media.src);
+            
+            // If blob fetch fails, try canvas method
+            if (!base64) {
+              console.log('Blob fetch failed for thread image, trying canvas method');
+              base64 = await imageToBase64(media);
+            }
+            
             if (base64) {
               mediaData.base64 = base64;
               console.log('Converted thread blob URL to base64 for image');
+            } else {
+              console.error('Failed to convert thread blob URL');
             }
           }
           
