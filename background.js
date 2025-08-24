@@ -600,12 +600,39 @@ async function attemptPost(text, media, retryCount) {
   }
 }
 
+async function getImageAspectRatio(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    
+    img.onload = function() {
+      const width = this.width;
+      const height = this.height;
+      URL.revokeObjectURL(url);
+      
+      if (width > 0 && height > 0) {
+        resolve({ width, height });
+      } else {
+        reject(new Error('Invalid image dimensions'));
+      }
+    };
+    
+    img.onerror = function() {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image for dimension calculation'));
+    };
+    
+    img.src = url;
+  });
+}
+
 async function uploadMedia(mediaItem) {
   console.log('uploadMedia called with:', mediaItem);
   const mediaUrl = typeof mediaItem === 'string' ? mediaItem : mediaItem.url;
   const alt = typeof mediaItem === 'string' ? '' : (mediaItem.alt || '');
   
   let blob;
+  let aspectRatio = undefined;
   
   // Fetch from URL
   console.log('Fetching media from URL:', mediaUrl);
@@ -616,6 +643,14 @@ async function uploadMedia(mediaItem) {
   }
   blob = await imageResponse.blob();
   console.log('Fetched media blob, size:', blob.size, 'type:', blob.type);
+  
+  // Try to get image dimensions for aspect ratio
+  try {
+    aspectRatio = await getImageAspectRatio(blob);
+    console.log('Calculated aspect ratio:', aspectRatio);
+  } catch (error) {
+    console.log('Could not determine aspect ratio, will upload without it:', error.message);
+  }
   
   const response = await fetch(`${BLUESKY_API_URL}/com.atproto.repo.uploadBlob`, {
     method: 'POST',
@@ -636,10 +671,17 @@ async function uploadMedia(mediaItem) {
   }
 
   const result = await response.json();
-  return {
+  const imageData = {
     alt: alt,
     image: result.blob,
   };
+  
+  // Add aspect ratio if we have it
+  if (aspectRatio) {
+    imageData.aspectRatio = aspectRatio;
+  }
+  
+  return imageData;
 }
 
 async function uploadImage(imageUrl) {
@@ -649,6 +691,15 @@ async function uploadImage(imageUrl) {
   }
   
   const blob = await imageResponse.blob();
+  
+  // Try to get image dimensions for aspect ratio
+  let aspectRatio = undefined;
+  try {
+    aspectRatio = await getImageAspectRatio(blob);
+    console.log('Calculated aspect ratio for image:', aspectRatio);
+  } catch (error) {
+    console.log('Could not determine aspect ratio, will upload without it:', error.message);
+  }
   
   const response = await fetch(`${BLUESKY_API_URL}/com.atproto.repo.uploadBlob`, {
     method: 'POST',
@@ -669,10 +720,17 @@ async function uploadImage(imageUrl) {
   }
 
   const result = await response.json();
-  return {
+  const imageData = {
     alt: '',
     image: result.blob,
   };
+  
+  // Add aspect ratio if we have it
+  if (aspectRatio) {
+    imageData.aspectRatio = aspectRatio;
+  }
+  
+  return imageData;
 }
 
 async function fetchLinkCard(url) {
