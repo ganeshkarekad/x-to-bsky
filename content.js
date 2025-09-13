@@ -1,5 +1,6 @@
 let isAuthenticated = false;
-let currentTweetElement = null;
+// Removed dropdown repost feature; no longer tracking a current tweet element from the overflow menu
+// let currentTweetElement = null;
 
 chrome.runtime.sendMessage({ action: 'checkAuth' }, (response) => {
   if (response) {
@@ -9,39 +10,17 @@ chrome.runtime.sendMessage({ action: 'checkAuth' }, (response) => {
 
 function injectBlueskyOption() {
   try {
-    console.log('Starting Bluesky option injection...');
-    
-    // Track clicks on "More" buttons to know which tweet is active
-    document.addEventListener('click', (e) => {
-      try {
-        const moreButton = e.target.closest('[aria-label*="More"], [data-testid="caret"], [aria-haspopup="menu"]');
-        if (moreButton) {
-          // Find the parent tweet
-          const tweet = moreButton.closest('article');
-          if (tweet) {
-            currentTweetElement = tweet;
-            console.log('Tracked tweet for dropdown:', tweet);
-          }
-        }
-      } catch (err) {
-        console.error('Error in click handler:', err);
-      }
-    }, true);
+    console.log('Starting Bluesky compose button injection...');
 
-    // Set up observer to watch for dropdown menus and compose areas
+    // Set up observer to watch for compose areas only
     const observer = new MutationObserver((mutations) => {
       try {
         mutations.forEach((mutation) => {
           if (mutation.type === 'childList') {
-            // Process any newly added nodes that might be dropdown menus
+            // Process newly added nodes for compose areas
             mutation.addedNodes.forEach(node => {
               if (node.nodeType === 1) { // Element node
                 try {
-                  processDropdownMenu(node);
-                  // Also check children
-                  const dropdowns = node.querySelectorAll('[role="menu"]');
-                  dropdowns.forEach(dropdown => processDropdownMenu(dropdown));
-                  
                   // Check for compose tweet areas
                   processComposeTweetAreas(node);
                 } catch (err) {
@@ -52,7 +31,6 @@ function injectBlueskyOption() {
             
             // Also check for compose tweet areas in existing DOM
             processComposeTweetAreas(document);
-            
             // Re-check existing processed areas in case they changed from regular to reply
             recheckProcessedAreas();
           }
@@ -80,95 +58,6 @@ function injectBlueskyOption() {
   }
 }
 
-function processDropdownMenu(menuElement) {
-  try {
-    // Check if this is a dropdown menu and hasn't been processed
-    if (menuElement.getAttribute('role') === 'menu' && !menuElement.querySelector('.bluesky-repost-option')) {
-      console.log('Processing dropdown menu:', menuElement);
-      
-      // Look for menu items in the dropdown
-      const menuItems = menuElement.querySelectorAll('[role="menuitem"]');
-      
-      if (menuItems.length > 0) {
-        // Find the last menu item to insert after
-        const lastMenuItem = menuItems[menuItems.length - 1];
-        const blueskyOption = createBlueskyMenuItem(lastMenuItem);
-        
-        if (blueskyOption) {
-          // Insert the Bluesky option
-          lastMenuItem.parentNode.insertBefore(blueskyOption, lastMenuItem.nextSibling);
-          console.log('Injected Bluesky option into dropdown');
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error in processDropdownMenu:', error);
-  }
-}
-
-function createBlueskyMenuItem(referenceMenuItem) {
-  // Clone the structure of an existing menu item
-  const option = document.createElement('div');
-  option.className = referenceMenuItem.className + ' bluesky-repost-option';
-  option.setAttribute('role', 'menuitem');
-  option.setAttribute('tabindex', '0');
-  
-  // Get the computed styles of the reference item
-  const refStyles = window.getComputedStyle(referenceMenuItem);
-  
-  // Create the menu item with Bluesky branding
-  option.innerHTML = `
-    <div style="display: flex; align-items: center; justify-content: flex-start; padding: 15px 20px; cursor: pointer; font-family: ${refStyles.fontFamily}; font-size: ${refStyles.fontSize}; width: 100%;">
-      <div style="margin-right: 12px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-        <span style="font-size: 18px;">🦋</span>
-      </div>
-      <span style="color: inherit; text-align: left;">Repost to Bluesky</span>
-    </div>
-  `;
-
-  // Add hover effect
-  option.addEventListener('mouseenter', () => {
-    option.style.backgroundColor = 'rgba(0, 168, 255, 0.1)';
-  });
-
-  option.addEventListener('mouseleave', () => {
-    option.style.backgroundColor = 'transparent';
-  });
-
-  option.addEventListener('click', async (e) => {
-    console.log('Bluesky option clicked!');
-    e.preventDefault();
-    e.stopPropagation();
-    
-    try {
-      // Use the tracked tweet element
-      if (currentTweetElement) {
-        console.log('Using tracked tweet:', currentTweetElement);
-        
-        // Close the dropdown by clicking outside
-        document.body.click();
-        
-        // Small delay to let dropdown close
-        setTimeout(async () => {
-          try {
-            await handleRepostToBluesky(currentTweetElement);
-          } catch (err) {
-            console.error('Error handling repost:', err);
-            showNotification('Failed to repost: ' + err.message, 'error');
-          }
-        }, 100);
-      } else {
-        console.error('No tweet element found');
-        showNotification('Could not identify the tweet. Please try again.', 'error');
-      }
-    } catch (error) {
-      console.error('Error in Bluesky option click:', error);
-      showNotification('An error occurred. Please try again.', 'error');
-    }
-  });
-
-  return option;
-}
 
 function processComposeTweetAreas(container) {
   try {
@@ -1112,25 +1001,7 @@ function extractTweetContent(tweetElement) {
   return content;
 }
 
-async function handleRepostToBluesky(tweetElement) {
-  console.log('Handling repost for tweet:', tweetElement);
-  
-  if (!isAuthenticated) {
-    showNotification('Please log in to Bluesky first', 'error');
-    chrome.runtime.sendMessage({ action: 'openPopup' });
-    return;
-  }
-
-  const content = extractTweetContent(tweetElement);
-  
-  if (!content.text && (!content.media || content.media.length === 0)) {
-    showNotification('Could not extract tweet content', 'error');
-    console.error('No content extracted from tweet');
-    return;
-  }
-
-  showRepostModal(content);
-}
+// removed: handleRepostToBluesky (dropdown repost feature removed)
 
 function showRepostModal(content) {
   console.log('Showing modal with content:', content);
@@ -1266,11 +1137,7 @@ function showRepostModal(content) {
   });
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// removed: escapeHtml (only used by deleted modal repost feature)
 
 function showNotification(message, type = 'info') {
   console.log(`Notification (${type}):`, message);
